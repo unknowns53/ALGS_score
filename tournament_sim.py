@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import multiprocessing as mp
+import os
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -85,22 +87,87 @@ def simulate_tournament(
     )
 
 
+def _run_chunk(
+    args: tuple[SimulationConfig, int, np.random.SeedSequence]
+) -> list[TournamentResult]:
+    """Run a contiguous chunk of simulations in a worker process."""
+    cfg, n_sims, seed_seq = args
+    rng = np.random.default_rng(seed_seq)
+    return [simulate_tournament(cfg, rng) for _ in range(n_sims)]
+
+
+def _resolve_workers(workers: int | None, n_sims: int) -> int:
+    """Decide an effective worker count."""
+    if workers is None or workers <= 0:
+        # Auto: half of detected CPUs, capped, parallel only if n_sims is big enough.
+        cpu = os.cpu_count() or 1
+        workers = max(1, cpu - 1) if cpu > 2 else 1
+    if workers <= 1:
+        return 1
+    # Parallel overhead is not worth it for tiny runs.
+    if n_sims < 1000:
+        return 1
+    return min(workers, max(1, n_sims))
+
+
 def run_simulations(
     cfg: SimulationConfig,
     n_sims: int,
     seed: int | None = None,
     show_progress: bool = False,
+    workers: int | None = 1,
 ) -> list[TournamentResult]:
-    rng = np.random.default_rng(seed)
-    iterator = range(n_sims)
-    if show_progress:
-        try:
-            from tqdm import tqdm  # type: ignore
-            iterator = tqdm(iterator, total=n_sims, desc="sims")
-        except ImportError:
-            pass
+    """Run `n_sims` independent tournament simulations.
+
+    workers=1 runs serially. workers>=2 splits the work across that many
+    processes via multiprocessing.Pool. workers=0 or None picks an automatic
+    value (about cpu_count - 1). Reproducibility is preserved: identical
+    (seed, n_sims, workers) always produce the identical list of results.
+    """
+    effective_workers = _resolve_workers(workers, n_sims)
+
+    if effective_workers == 1:
+        rng = np.random.default_rng(seed)
+        iterator = range(n_sims)
+        if show_progress:
+            try:
+                from tqdm import tqdm  # type: ignore
+                iterator = tqdm(iterator, total=n_sims, desc="sims")
+            except ImportError:
+                pass
+        return [simulate_tournament(cfg, rng) for _ in iterator]
+
+    # Parallel path: spawn one independent SeedSequence per worker chunk so the
+    # global (seed, workers, n_sims) triple uniquely determines all results.
+    base_ss = np.random.SeedSequence(seed)
+    child_seeds = base_ss.spawn(effective_workers)
+
+    base_chunk = n_sims // effective_workers
+    remainder = n_sims % effective_workers
+    chunks = [base_chunk + (1 if i < remainder else 0) for i in range(effective_workers)]
+    args = [
+        (cfg, chunks[i], child_seeds[i])
+        for i in range(effective_workers)
+        if chunks[i] > 0
+    ]
+
+    ctx = mp.get_context("spawn")  # consistent on Windows + Linux
+    with ctx.Pool(processes=len(args)) as pool:
+        if show_progress:
+            try:
+                from tqdm import tqdm  # type: ignore
+                results_iter = []
+                with tqdm(total=n_sims, desc="sims") as bar:
+                    for chunk_results in pool.imap(_run_chunk, args):
+                        results_iter.append(chunk_results)
+                        bar.update(len(chunk_results))
+                chunk_lists = results_iter
+            except ImportError:
+                chunk_lists = pool.map(_run_chunk, args)
+        else:
+            chunk_lists = pool.map(_run_chunk, args)
 
     results: list[TournamentResult] = []
-    for _ in iterator:
-        results.append(simulate_tournament(cfg, rng))
+    for cl in chunk_lists:
+        results.extend(cl)
     return results

@@ -37,6 +37,7 @@ python -m cli --sims 50000 --region-profile apac_n --seed 42 `
 
 - `--sims` シミュレーション回数
 - `--seed` 乱数シード
+- `--workers` 並列ワーカー数（`1`=直列、`0`=自動）
 - `--region-profile {custom, americas, emea, apac_n, apac_s}`
 - `--starting-points {none, seeded, custom}` （`custom` のときは `--custom-starting-points "3,3,2,2,2,2,1,1,1,1,0,..."` で 20 個指定）
 - `--max-matches` 大会の打ち切り試合数（デフォルト 30）
@@ -44,6 +45,8 @@ python -m cli --sims 50000 --region-profile apac_n --seed 42 `
 - 強度・キル・順位の β / 相関、リスポーンモデル、キル消滅・移転率、Match Point 圧力など、仕様書記載の全パラメータに対応する `--*` フラグ
 - `--config PATH` で JSON 設定ファイルを読み込み
 - `--no-plot` で PNG 生成スキップ
+
+**指定できる全パラメータ・既定値・ハードコード定数の完全リファレンスは [`docs/parameters.md`](docs/parameters.md) にまとめてある。**
 
 ### JSON 設定ファイル
 
@@ -57,7 +60,7 @@ python -m cli --config examples\apac_n_preset.json --sims 5000 --seed 99
 
 JSON のキーは `SimulationConfig` のフィールド名（snake_case）と一致するものが全部使える。加えて以下の実行レベルキーも受け付ける:
 
-- `sims`, `seed`
+- `sims`, `seed`, `workers`
 - `starting_points`（`starting_points_mode` でも可）, `custom_starting_points`（配列 or カンマ区切り文字列）
 - `region_profile`
 - `output_csv`, `output_json`, `output_plot`
@@ -71,12 +74,14 @@ JSON のキーは `SimulationConfig` のフィールド名（snake_case）と一
 config.py            SimulationConfig + リージョンプリセット + 固定テーブル
 teams.py             Team dataclass + 多変量正規でチーム強度生成
 match_sim.py         1 試合分のシミュレート（Plackett-Luce 順位 / リスポーン / キル配分）
-tournament_sim.py    1 大会のシミュレート（Match Point 判定・打ち切り）
+tournament_sim.py    1 大会のシミュレート（Match Point 判定 + 並列実行ドライバ）
 stats.py             SummaryResult 集計、CSV/JSON 出力、テキスト整形
 plot.py              matplotlib ヒストグラム
 cli.py               argparse + 対話プロンプト
 run_sim.py           対話起動ラッパー
-tests\               pytest 一式
+docs\parameters.md   全パラメータ・定数の完全リファレンス
+examples\            JSON 設定サンプル
+tests\               pytest 一式（ルール / サニティ / 並列再現性）
 ```
 
 ## 主要モデルの要点
@@ -99,7 +104,7 @@ tests\               pytest 一式
 
 `seeded` と `custom` はレガシー互換 / 実験用に残してある選択肢で、ユーザーが明示的に指定したときだけ使われる:
 
-- `--starting-points seeded`: `config.py` の `STARTING_POINTS_SEEDED` テーブル（シード 1〜20 順に `3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0`）を適用。過去フォーマットで持ち越し点があった時代を模倣したいときに使う。
+- `--starting-points seeded`: `config.py` の `STARTING_POINTS_SEEDED` テーブル（シード 1〜20 順に `10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0`）を適用。過去フォーマットで Winners Blacket の順位に応じた持ち越し点があった時代を模倣したいときに使う。
 - `--starting-points custom --custom-starting-points "..."`: 20 個のカンマ区切り整数を直接指定。JSON では `"custom_starting_points": [5, 4, ...]` のように配列でも書ける。
 
 `seeded` テーブルを書き換えたければ `config.py` の `STARTING_POINTS_SEEDED` を直接編集できる。
@@ -116,10 +121,30 @@ tests\               pytest 一式
 
 数値はすべて `--*` フラグで上書き可能。
 
+## 並列処理
+
+モンテカルロは試行 1 件ずつが完全に独立なので、`--workers N` で `multiprocessing` の `Pool` に分割してマルチコアで回せる:
+
+```powershell
+# CPU 数 -1 で自動分配
+python -m cli --sims 100000 --region-profile apac_n --workers 0
+
+# 4 プロセスで固定
+python -m cli --sims 100000 --region-profile apac_n --workers 4
+```
+
+仕組み:
+
+- `numpy.random.SeedSequence(seed).spawn(N)` で N 個の独立な子シードを作り、各ワーカーに割り当てる。**同じ `(seed, sims, workers)` の組み合わせなら結果は完全に決定的**（再現可能）。
+- `workers` を変えるとチャンク分割が変わるので、`seed` が同じでも結果列は変わる。再現性を担保したいときは `workers` も固定すること。
+- `sims < 1000` のときは並列のオーバーヘッドの方が大きいので、自動的に直列実行に切り替わる。
+- Windows / Linux 共通で `spawn` コンテキストを使うので、コード側の `if __name__ == "__main__":` ガードが必須（`cli.py` と `run_sim.py` には入れてある）。
+- 1 大会あたりの作業を複数コアに分けるのではなく、**N 個の独立な大会を別プロセスに分散する**設計なので、`sims` が大きいほどスケールしやすい。「1 コアで複数ジョブを並列に流したい」場合は別シェルで `python -m cli --config ...` を複数同時起動すれば達成できる（プロセス分離なので干渉しない）。
+
 ## テスト
 
 ```powershell
 pytest tests
 ```
 
-ルール 8 件（仕様書 Rule tests）+ サニティ 5 件（仕様書 Sanity tests）。サニティは確率的だが、サンプル数とシードを固定してあるので決定的に通る。
+ルール 8 件（仕様書 Rule tests）+ サニティ 5 件（仕様書 Sanity tests）+ 並列再現性 4 件。サニティと並列再現性は確率的だが、サンプル数と乱数シードを固定してあるので決定的に通る。

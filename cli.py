@@ -21,7 +21,7 @@ DEFAULT_OUT_DIR = Path("out")
 # Run-level keys that may appear in a JSON config file alongside
 # SimulationConfig fields.
 RUN_LEVEL_JSON_KEYS = {
-    "sims", "seed",
+    "sims", "seed", "workers",
     "starting_points",          # alias for starting_points_mode
     "output_csv", "output_json", "output_plot",
     "make_plot", "print_summary", "show_progress",
@@ -46,6 +46,8 @@ def _build_parser() -> argparse.ArgumentParser:
     # Top-level run config
     p.add_argument("--sims", type=int, default=None)
     p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--workers", type=int, default=None,
+                   help="parallel worker processes (0 = auto, 1 = serial)")
     p.add_argument("--max-matches", type=int, default=None)
     p.add_argument("--match-point-threshold", type=int, default=None)
 
@@ -139,6 +141,8 @@ def _interactive_inputs() -> dict:
     out["sims"] = int(_prompt("シミュレーション回数", "10000"))
     seed_raw = _prompt("乱数シード（空欄でランダム）", "")
     out["seed"] = int(seed_raw) if seed_raw else None
+    workers_raw = _prompt("並列ワーカー数 (1=直列, 0=自動)", "1")
+    out["workers"] = int(workers_raw) if workers_raw else 1
 
     print()
     print("リージョンプロファイル:")
@@ -180,7 +184,7 @@ def _build_config(
     ns: argparse.Namespace,
     interactive: dict | None,
     json_cfg: dict | None,
-) -> tuple[SimulationConfig, int, int | None, str, str, str | None, bool]:
+) -> tuple[SimulationConfig, int, int | None, str, str, str | None, bool, int]:
     """Compose SimulationConfig and run-level settings.
 
     Priority: CLI flag > JSON config > interactive prompt > built-in default.
@@ -264,6 +268,12 @@ def _build_config(
     # Run-level
     sims = _pick(ns.sims, json_cfg.get("sims"), interactive.get("sims"), 10000)
     seed = _pick(ns.seed, json_cfg.get("seed"), interactive.get("seed"))
+    workers = _pick(
+        ns.workers,
+        json_cfg.get("workers"),
+        interactive.get("workers"),
+        1,
+    )
 
     out_csv = _pick(
         ns.output_csv, json_cfg.get("output_csv"),
@@ -300,7 +310,10 @@ def _build_config(
     else:
         show_progress = bool(json_cfg.get("show_progress", False))
 
-    return cfg, int(sims), seed, out_csv, out_json, out_plot, show_progress
+    return (
+        cfg, int(sims), seed, out_csv, out_json, out_plot,
+        show_progress, int(workers),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -317,8 +330,8 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:
         interactive = _interactive_inputs()
 
-    cfg, sims, seed, out_csv, out_json, out_plot, show_progress = _build_config(
-        ns, interactive, json_cfg
+    cfg, sims, seed, out_csv, out_json, out_plot, show_progress, workers = (
+        _build_config(ns, interactive, json_cfg)
     )
 
     # print_summary respects JSON too.
@@ -327,8 +340,12 @@ def main(argv: list[str] | None = None) -> int:
         print_summary = bool(json_cfg["print_summary"])
 
     print(f"Running {sims} simulations (region={cfg.region_profile}, "
-          f"starting_points={cfg.starting_points_mode}, seed={seed}) ...")
-    results = run_simulations(cfg, n_sims=sims, seed=seed, show_progress=show_progress)
+          f"starting_points={cfg.starting_points_mode}, seed={seed}, "
+          f"workers={workers}) ...")
+    results = run_simulations(
+        cfg, n_sims=sims, seed=seed,
+        show_progress=show_progress, workers=workers,
+    )
     summary = summarize(results, cfg)
 
     if print_summary:

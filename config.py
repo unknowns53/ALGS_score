@@ -30,11 +30,9 @@ PLACEMENT_KILL_FACTOR: tuple[float, ...] = (
 # is "none" (everyone starts at 0).
 # Values loosely follow earlier ALGS years when seed bonuses did exist.
 STARTING_POINTS_SEEDED: tuple[int, ...] = (
-    3, 3,           # seeds 1-2
-    2, 2, 2, 2,     # seeds 3-6
-    1, 1, 1, 1,     # seeds 7-10
-    0, 0, 0, 0, 0,  # seeds 11-15
-    0, 0, 0, 0, 0,  # seeds 16-20
+    10, 9, 8, 7, 6, 5, 4, 3, 2, 1,  # seeds 1-10
+    0, 0, 0, 0, 0,                  # seeds 11-15
+    0, 0, 0, 0, 0,                  # seeds 16-20
 )
 
 
