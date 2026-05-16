@@ -1,0 +1,251 @@
+"""Single-match simulation: placement, respawn, kill accounting, kill allocation."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+from config import (
+    PLACEMENT_KILL_FACTOR,
+    PLACEMENT_POINTS,
+    SimulationConfig,
+)
+
+
+@dataclass
+class MatchResult:
+    match_index: int
+    placements: np.ndarray         # shape (num_teams,), team_id ordered 1st .. last
+    winner_team_id: int
+    placement_points: np.ndarray   # shape (num_teams,), per-team placement points
+    team_kills: np.ndarray         # shape (num_teams,), per-team scored kill count
+    team_scores: np.ndarray        # shape (num_teams,), placement + kills
+    eligible_at_start: np.ndarray  # shape (num_teams,), bool
+    respawned_players: int
+    champion_remaining_players: int
+    death_events: int
+    scored_kills: int
+    neutral_deaths: int
+    lost_kill_points: int
+    transferred_kills: int
+    revived_knocks: int
+
+
+def _sample_negbin_mean_dispersion(
+    mean: float, dispersion: float, rng: np.random.Generator
+) -> int:
+    """NegBin parameterised by (mean, dispersion=k) where var = mean + mean^2/k."""
+    if dispersion <= 0:
+        raise ValueError("dispersion must be positive")
+    # p = k / (k + mu), n = k
+    p = dispersion / (dispersion + mean)
+    n = dispersion
+    return int(rng.negative_binomial(n, p))
+
+
+def sample_respawned_players(cfg: SimulationConfig, rng: np.random.Generator) -> int:
+    if cfg.respawn_model == "poisson":
+        value = int(rng.poisson(cfg.respawn_mean))
+    elif cfg.respawn_model == "negbin":
+        value = _sample_negbin_mean_dispersion(
+            cfg.respawn_mean, cfg.respawn_dispersion, rng
+        )
+    else:
+        raise ValueError(f"unknown respawn_model: {cfg.respawn_model}")
+    return int(min(max(value, 0), cfg.max_respawned_players))
+
+
+def sample_champion_remaining(cfg: SimulationConfig, rng: np.random.Generator) -> int:
+    lo = cfg.champion_remaining_min
+    hi = cfg.champion_remaining_max
+    return int(rng.integers(lo, hi + 1))
+
+
+def sample_death_events(respawned: int, champion_remaining: int, num_teams: int = 20,
+                        players_per_team: int = 3) -> int:
+    """death_events = total_players + respawned - champion_remaining."""
+    total = num_teams * players_per_team
+    return int(total + respawned - champion_remaining)
+
+
+def sample_kill_credit(
+    death_events: int,
+    eligible_count: int,
+    cfg: SimulationConfig,
+    rng: np.random.Generator,
+) -> tuple[int, int, int, int]:
+    """Returns (scored_kills, neutral_deaths, lost_kill_points, transferred_kills)."""
+    if death_events <= 0:
+        return 0, 0, 0, 0
+
+    neutral = int(rng.binomial(death_events, np.clip(cfg.neutral_death_rate, 0.0, 1.0)))
+
+    mp_factor = 1.0
+    if cfg.mp_pressure_enabled and eligible_count > 0:
+        mp_factor = cfg.mp_pressure_lost_kill_multiplier
+
+    lost_rate = cfg.lost_kill_rate * cfg.chaos_multiplier * mp_factor
+    lost_rate = float(np.clip(lost_rate, 0.0, 1.0))
+
+    remaining = death_events - neutral
+    lost = int(rng.binomial(remaining, lost_rate)) if remaining > 0 else 0
+
+    scored = death_events - neutral - lost
+    transferred = (
+        int(rng.binomial(scored, np.clip(cfg.transfer_kill_rate, 0.0, 1.0)))
+        if scored > 0 else 0
+    )
+    return scored, neutral, lost, transferred
+
+
+def sample_revived_knocks(cfg: SimulationConfig, rng: np.random.Generator) -> int:
+    """Revived knocks are independent of death_events and scored_kills."""
+    if cfg.respawn_model == "poisson":
+        return int(rng.poisson(cfg.revive_knock_mean))
+    return _sample_negbin_mean_dispersion(
+        cfg.revive_knock_mean, max(cfg.respawn_dispersion, 1.0), rng
+    )
+
+
+def _softmax_weights(log_weights: np.ndarray) -> np.ndarray:
+    """Numerically stable softmax. Returns a probability vector (sums to 1)."""
+    log_weights = np.asarray(log_weights, dtype=np.float64)
+    log_weights = log_weights - log_weights.max()
+    w = np.exp(log_weights)
+    s = w.sum()
+    if s <= 0 or not np.isfinite(s):
+        # degenerate -- fall back to uniform
+        return np.full_like(w, 1.0 / len(w))
+    return w / s
+
+
+def compute_placement(
+    teams_arr: dict,
+    cfg: SimulationConfig,
+    rng: np.random.Generator,
+    eligible_mask: np.ndarray,
+) -> np.ndarray:
+    """Plackett-Luce style sampling. Returns team_id array (1st .. 20th)."""
+    n = len(teams_arr["placement_skill"])
+    placement_skill = teams_arr["placement_skill"]
+    macro = teams_arr["macro_consistency"]
+    volatility = teams_arr["volatility"]
+    win_conv = teams_arr["win_conversion"]
+
+    noise = rng.normal(0.0, cfg.base_match_noise * volatility, size=n)
+    log_placement_w = (
+        cfg.rank_beta * placement_skill
+        + cfg.consistency_beta * macro
+        + noise
+    )
+
+    # Winner weights extend placement weights with win_conversion and MP pressure.
+    log_winner_w = log_placement_w + cfg.win_beta * win_conv
+    if cfg.mp_pressure_enabled:
+        log_winner_w = log_winner_w - cfg.mp_win_penalty * eligible_mask.astype(np.float64)
+
+    team_ids = teams_arr["team_id"]
+    order: list[int] = []
+    remaining = np.ones(n, dtype=bool)
+
+    # 1st place uses winner weights
+    p = _softmax_weights(np.where(remaining, log_winner_w, -np.inf))
+    first_idx = int(rng.choice(n, p=p))
+    order.append(int(team_ids[first_idx]))
+    remaining[first_idx] = False
+
+    # Subsequent places use placement weights (without win_conversion bonus)
+    for _ in range(1, n):
+        masked = np.where(remaining, log_placement_w, -np.inf)
+        p = _softmax_weights(masked)
+        idx = int(rng.choice(n, p=p))
+        order.append(int(team_ids[idx]))
+        remaining[idx] = False
+
+    return np.array(order, dtype=int)
+
+
+def allocate_kills(
+    teams_arr: dict,
+    placements: np.ndarray,
+    scored_kills: int,
+    cfg: SimulationConfig,
+    rng: np.random.Generator,
+    eligible_mask: np.ndarray,
+) -> np.ndarray:
+    """Multinomial allocation across teams, indexed by team_id."""
+    n = len(teams_arr["fight_skill"])
+    fight = teams_arr["fight_skill"]
+    team_ids = teams_arr["team_id"]
+
+    # placement_position[team_id] = rank (0=1st, 19=20th)
+    placement_position = np.empty(n, dtype=int)
+    for rank, tid in enumerate(placements):
+        placement_position[tid] = rank
+
+    placement_factor = np.array(
+        [PLACEMENT_KILL_FACTOR[placement_position[tid]] for tid in team_ids]
+    )
+    log_w = cfg.kill_beta * fight + np.log(placement_factor)
+    if cfg.mp_pressure_enabled:
+        log_w = log_w - cfg.mp_kill_penalty * eligible_mask.astype(np.float64)
+
+    probs = _softmax_weights(log_w)
+    if scored_kills <= 0:
+        return np.zeros(n, dtype=int)
+    counts = rng.multinomial(scored_kills, probs)
+    # counts is indexed by enumeration of team_ids; team_id 0..n-1 (they match here)
+    return counts.astype(int)
+
+
+def simulate_match(
+    teams_arr: dict,
+    cumulative_scores: np.ndarray,
+    match_index: int,
+    cfg: SimulationConfig,
+    rng: np.random.Generator,
+) -> MatchResult:
+    """Run one match and return the result."""
+    n = len(teams_arr["team_id"])
+    eligible_at_start = cumulative_scores >= cfg.match_point_threshold
+    eligible_count = int(eligible_at_start.sum())
+
+    placements = compute_placement(teams_arr, cfg, rng, eligible_at_start)
+    respawned = sample_respawned_players(cfg, rng)
+    champ_remaining = sample_champion_remaining(cfg, rng)
+    death_events = sample_death_events(respawned, champ_remaining,
+                                       cfg.num_teams, cfg.players_per_team)
+
+    scored, neutral, lost, transferred = sample_kill_credit(
+        death_events, eligible_count, cfg, rng
+    )
+    revived = sample_revived_knocks(cfg, rng)
+
+    team_kills = allocate_kills(
+        teams_arr, placements, scored, cfg, rng, eligible_at_start
+    )
+
+    placement_points_per_team = np.zeros(n, dtype=int)
+    for rank, tid in enumerate(placements):
+        placement_points_per_team[tid] = PLACEMENT_POINTS[rank]
+
+    team_scores = placement_points_per_team + team_kills
+
+    return MatchResult(
+        match_index=match_index,
+        placements=placements,
+        winner_team_id=int(placements[0]),
+        placement_points=placement_points_per_team,
+        team_kills=team_kills,
+        team_scores=team_scores,
+        eligible_at_start=eligible_at_start.copy(),
+        respawned_players=int(respawned),
+        champion_remaining_players=int(champ_remaining),
+        death_events=int(death_events),
+        scored_kills=int(scored),
+        neutral_deaths=int(neutral),
+        lost_kill_points=int(lost),
+        transferred_kills=int(transferred),
+        revived_knocks=int(revived),
+    )
