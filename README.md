@@ -46,7 +46,7 @@ python -m cli --sims 50000 --region-profile apac_n --seed 42 `
 - `--config PATH` で JSON 設定ファイルを読み込み
 - `--no-plot` で PNG 生成スキップ
 
-**指定できる全パラメータ・既定値・ハードコード定数の完全リファレンスは [`docs/parameters.md`](docs/parameters.md) にまとめてある。**
+**指定できる全パラメータ・既定値・ハードコード定数の完全リファレンスは [`docs/parameters.md`](docs/parameters.md) にまとめてある。** 各既定値が実際の ALGS 大会データとどれだけ合っているかの検証は [`docs/data_validation.md`](docs/data_validation.md) を参照。
 
 ### JSON 設定ファイル
 
