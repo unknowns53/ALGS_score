@@ -6,10 +6,10 @@
   "max_matches": 30,
   "match_point_threshold": 50,
 
-  "strength_sigma": 0.30,
+  "strength_sigma": 0.27,
   "rank_beta": 0.85,
   "kill_beta": 0.75,
-  "win_beta": 0.65,
+  "win_beta": 0.55,
   "consistency_beta": 0.40,
   "placement_fight_correlation": 0.45,
   "placement_win_correlation": 0.35,
@@ -21,8 +21,8 @@
   "respawn_mean": 7.0,
   "respawn_dispersion": 3.0,
 
-  "neutral_death_rate": 0.01,
-  "lost_kill_rate": 0.04,
+  "neutral_death_rate": 0.03,
+  "lost_kill_rate": 0.10,
   "transfer_kill_rate": 0.06,
   "revive_knock_mean": 12.0,
 

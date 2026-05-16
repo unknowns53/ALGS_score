@@ -42,7 +42,7 @@ CLI フラグは `--<field-name with hyphens>` で対応。JSON ではフィー�
 
 | フィールド | 型 | 既定値 | 説明 |
 |---|---|---|---|
-| `strength_sigma` | float | 0.45 | ロビー全体の戦力分散。大きいほど上下差が広がる |
+| `strength_sigma` | float | 0.45 | ロビー全体の戦力分散。大きいほど上下差が広がる（リージョンプリセットでは 0.27-0.43 の範囲） |
 | `rank_beta` | float | 1.0 | placement_skill が順位重みに効く係数 |
 | `kill_beta` | float | 0.8 | fight_skill がキル配分重みに効く係数 |
 | `win_beta` | float | 0.8 | win_conversion が 1 位抽選に効く係数 |
@@ -74,8 +74,8 @@ CLI フラグは `--<field-name with hyphens>` で対応。JSON ではフィー�
 
 | フィールド | 型 | 既定値 | 説明 |
 |---|---|---|---|
-| `neutral_death_rate` | float | 0.01 | 中立死（リング・地形死）の比率。ノック由来でない死亡 |
-| `lost_kill_rate` | float | 0.03 | ノックしたがチームスコアに計上されなかった比率（自チーム全滅・第三者干渉等） |
+| `neutral_death_rate` | float | 0.03 | 中立死（リング・地形死）の比率。ノック由来でない死亡。実 Lobby kill ~52/試合に合わせて 0.01 → 0.03 に引き上げ済み |
+| `lost_kill_rate` | float | 0.06 | ノックしたがチームスコアに計上されなかった比率（自チーム全滅・第三者干渉等）。地域別では 0.06-0.10 |
 | `transfer_kill_rate` | float | 0.05 | scored_kills のうち漁夫で別チームに渡る比率。実配分にも反映され、漁夫先は順位非依存・fight_skill のみの重みで抽選される |
 | `revive_knock_mean` | float | 10.0 | 復活ノックの平均（死亡イベント・scored_kills と独立） |
 | `chaos_multiplier` | float | 1.0 | lost_kill_rate に掛かる全体カオス係数（仕様書に値の指定なし、こちらで設定） |
@@ -136,16 +136,26 @@ team_kills   = multinomial(scored_kills - transferred_kills, probs)
             + multinomial(transferred_kills, fight_skill のみの重み)
 ```
 
-つまり `1.35` と `0.45` は絶対値ではなく **softmax 後の確率比** に効く。値自体に意味があるのではなく、上位／下位の比 (約 3:1) に意味がある。
+つまり `2.50` と `0.20` は絶対値ではなく **softmax 後の確率比** に効く。値自体に意味があるのではなく、上位／下位の比 (約 12:1) に意味がある。実 ALGS の Pro League / Champs Finals 4 大会で「優勝チームの 1 位試合平均 7.4 kills、16-20 位試合平均 0.7 kills」を観測しており、これを再現する勾配に校正済み。
 
 ```
-1st:        1.35
-2nd:        1.25
-3rd:        1.20
-4th-5th:    1.10
-6th-10th:   1.00
-11th-15th:  0.75
-16th-20th:  0.45
+1st:        2.50
+2nd:        2.00
+3rd:        1.70
+4th:        1.40
+5th:        1.20
+6th:        1.00
+7th:        0.90
+8th:        0.80
+9th:        0.70
+10th:       0.60
+11th:       0.50
+12th:       0.45
+13th:       0.40
+14th:       0.35
+15th:       0.30
+16th-17th:  0.25
+18th-20th:  0.20
 ```
 
 ### Seeded 出発点テーブル `STARTING_POINTS_SEEDED`
@@ -161,16 +171,17 @@ team_kills   = multinomial(scored_kills - transferred_kills, probs)
 
 ## 4. リージョンプロファイルの中身
 
-`apply_region_profile()` で適用される値。CLI / JSON で個別に上書きできる。Year 4-5 の各地域 4 大会（計 16 大会）の実績平均にチューニング済み。詳細は `docs/data_validation.md` を参照。
+`apply_region_profile()` で適用される値。CLI / JSON で個別に上書きできる。Year 4-5 の各地域 4 大会（計 16 大会）の実績平均 + per-match Lobby kill 実測 4 大会で第 2 次校正済み。詳細は `docs/data_validation.md` を参照。
 
 | フィールド | americas | emea | apac_n | apac_s |
 |---|---|---|---|---|
 | **目標 mean (実績)** | **7.50** | **8.50** | **8.75** | **8.00** |
-| **シミュ mean** | **7.54** | **8.35** | **8.81** | **8.11** |
-| `strength_sigma` | 0.48 | 0.38 | 0.30 | 0.42 |
+| **シミュ mean** | **7.52** | **8.44** | **8.75** | **8.05** |
+| **シミュ Lobby kill 平均** | 57.4 | 57.0 | 55.1 | 57.3 |
+| `strength_sigma` | 0.43 | 0.30 | 0.27 | 0.38 |
 | `rank_beta` | 1.00 | 0.95 | 0.85 | 0.95 |
 | `kill_beta` | 0.85 | 0.80 | 0.75 | 0.72 |
-| `win_beta` | 0.85 | 0.75 | 0.65 | 0.85 |
+| `win_beta` | 0.85 | 0.75 | 0.55 | 0.85 |
 | `consistency_beta` | 0.45 | 0.40 | 0.40 | 0.45 |
 | `placement_fight_correlation` | 0.60 | 0.55 | 0.45 | 0.52 |
 | `placement_win_correlation` | 0.50 | 0.45 | 0.35 | 0.42 |
@@ -180,20 +191,20 @@ team_kills   = multinomial(scored_kills - transferred_kills, probs)
 | `respawn_model` | negbin | negbin | negbin | negbin |
 | `respawn_mean` | 6.0 | 6.5 | 7.0 | 6.5 |
 | `respawn_dispersion` | 4.0 | 3.5 | 3.0 | 3.5 |
-| `neutral_death_rate` | 0.01 | 0.01 | 0.01 | 0.01 |
-| `lost_kill_rate` | 0.025 | 0.035 | 0.04 | 0.030 |
+| `neutral_death_rate` | 0.03 | 0.03 | 0.03 | 0.03 |
+| `lost_kill_rate` | 0.06 | 0.07 | 0.10 | 0.065 |
 | `transfer_kill_rate` | 0.05 | 0.05 | 0.06 | 0.06 |
 | `revive_knock_mean` | 9.0 | 10.0 | 12.0 | 11.0 |
-| `mp_win_penalty` | 0.08 | 0.13 | 0.15 | 0.12 |
+| `mp_win_penalty` | 0.11 | 0.17 | 0.15 | 0.14 |
 | `mp_kill_penalty` | 0.04 | 0.05 | 0.05 | 0.06 |
 | `mp_pressure_lost_kill_multiplier` | 1.15 | 1.25 | 1.35 | 1.30 |
 | `mp_pressure_enabled` | true | true | true | true |
 
-意味合い（実績データで再校正後）:
+意味合い（第 2 次校正後）:
 
-- **americas**: 上位の戦力勾配がやや大きく、Match Point 後の勝ち切り (win_beta) も高め。実績 4 大会の平均 7.5 試合で、地域内で最も短期決着しやすいが、Split 1 2025 の 10 試合のような長期化もある。
-- **emea**: 戦力拮抗が地域内で最も強い (strength_sigma 0.38)。「structured & low chaos」は実データには合わず、むしろ APAC-N に近い拮抗ロビー。実績平均 8.5 試合。
-- **apac_n**: 戦力拮抗 + カオス高め + MP 圧力ペナルティ厚め。実績平均 8.75 試合で 4 地域中最長。2024 S2 で 13 試合という外れ値も。
+- **americas**: 上位の戦力勾配は地域内で最も大きい (strength_sigma 0.43)。実績平均 7.5 試合で、地域内で最も短期決着しやすい。
+- **emea**: 戦力拮抗が APAC-N と同等まで縮んだ (strength_sigma 0.30)。「structured & low chaos」のイメージは Y4/Y5 実データには合わず、特に Y5 で EMEA が大幅後退したことを反映。実績平均 8.5 試合、`mp_win_penalty` も全地域中最も厚い 0.17。
+- **apac_n**: 戦力拮抗が最も強い (strength_sigma 0.27) + 低キル傾向 (lost_kill_rate 0.10) + 勝ち切り難度高い (win_beta 0.55)。実績平均 8.75 試合で 4 地域中最長、2024 S2 の 13 試合外れ値も p99 で自然発生する。
 - **apac_s**: 戦力差は中位、カオス中程度。実績平均 8.0 試合で Americas と APAC-N の中間。
 
 ---
@@ -207,7 +218,7 @@ team_kills   = multinomial(scored_kills - transferred_kills, probs)
   "workers": 0,
   "region_profile": "apac_n",
   "starting_points": "none",
-  "strength_sigma": 0.30,
+  "strength_sigma": 0.27,
   "respawn_mean": 7.0,
   "champion_remaining_weights": [1.0, 4.0, 15.0],
   "mp_win_penalty": 0.15,
