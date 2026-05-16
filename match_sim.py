@@ -30,6 +30,11 @@ class MatchResult:
     lost_kill_points: int
     transferred_kills: int
     revived_knocks: int
+    # Total knockdowns in the match, derived from the others as
+    #   total_knocks = (death_events - neutral_deaths) + revived_knocks
+    # Neutral deaths are not knock-derived (ring/fall/etc), so they are
+    # excluded from the knock count.
+    total_knocks: int
 
 
 def _sample_negbin_mean_dispersion(
@@ -191,11 +196,22 @@ def allocate_kills(
     teams_arr: dict,
     placements: np.ndarray,
     scored_kills: int,
+    transferred_kills: int,
     cfg: SimulationConfig,
     rng: np.random.Generator,
     eligible_mask: np.ndarray,
 ) -> np.ndarray:
-    """Multinomial allocation across teams, indexed by team_id."""
+    """Multinomial allocation across teams, indexed by team_id.
+
+    Of the `scored_kills` total, `transferred_kills` are treated as 漁夫
+    (third-party-kill steals) and allocated using a separate weight that drops
+    the placement factor -- third-party kills depend on aggression / lobby
+    positioning, not on the team's final placement. The remaining
+    (scored_kills - transferred_kills) kills go through the standard
+    placement-weighted distribution.
+
+    The sum of returned team_kills equals scored_kills (conservation).
+    """
     n = len(teams_arr["fight_skill"])
     fight = teams_arr["fight_skill"]
     team_ids = teams_arr["team_id"]
@@ -208,16 +224,32 @@ def allocate_kills(
     placement_factor = np.array(
         [PLACEMENT_KILL_FACTOR[placement_position[tid]] for tid in team_ids]
     )
-    log_w = cfg.kill_beta * fight + np.log(placement_factor)
+    log_w_base = cfg.kill_beta * fight + np.log(placement_factor)
+    log_w_steal = cfg.kill_beta * fight  # third-party kills: ignore placement
     if cfg.mp_pressure_enabled:
-        log_w = log_w - cfg.mp_kill_penalty * eligible_mask.astype(np.float64)
+        penalty = cfg.mp_kill_penalty * eligible_mask.astype(np.float64)
+        log_w_base = log_w_base - penalty
+        log_w_steal = log_w_steal - penalty
 
-    probs = _softmax_weights(log_w)
+    base_probs = _softmax_weights(log_w_base)
+    steal_probs = _softmax_weights(log_w_steal)
+
     if scored_kills <= 0:
         return np.zeros(n, dtype=int)
-    counts = rng.multinomial(scored_kills, probs)
-    # counts is indexed by enumeration of team_ids; team_id 0..n-1 (they match here)
-    return counts.astype(int)
+
+    transferred_kills = max(0, min(int(transferred_kills), int(scored_kills)))
+    base_count = int(scored_kills) - transferred_kills
+
+    if base_count > 0:
+        base_alloc = rng.multinomial(base_count, base_probs)
+    else:
+        base_alloc = np.zeros(n, dtype=int)
+    if transferred_kills > 0:
+        steal_alloc = rng.multinomial(transferred_kills, steal_probs)
+    else:
+        steal_alloc = np.zeros(n, dtype=int)
+
+    return (base_alloc + steal_alloc).astype(int)
 
 
 def simulate_match(
@@ -244,8 +276,12 @@ def simulate_match(
     revived = sample_revived_knocks(cfg, rng)
 
     team_kills = allocate_kills(
-        teams_arr, placements, scored, cfg, rng, eligible_at_start
+        teams_arr, placements, scored, transferred,
+        cfg, rng, eligible_at_start,
     )
+
+    # Total knockdowns in the match (knock-derived deaths + revived knocks).
+    total_knocks = max(0, death_events - neutral) + revived
 
     placement_points_per_team = np.zeros(n, dtype=int)
     for rank, tid in enumerate(placements):
@@ -269,4 +305,5 @@ def simulate_match(
         lost_kill_points=int(lost),
         transferred_kills=int(transferred),
         revived_knocks=int(revived),
+        total_knocks=int(total_knocks),
     )

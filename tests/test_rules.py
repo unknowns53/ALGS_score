@@ -117,6 +117,55 @@ def test_7_kill_accounting_invariant():
         cumulative = cumulative + r.team_scores
 
 
+def test_9_total_knocks_invariant():
+    """total_knocks must equal (death_events - neutral_deaths) + revived_knocks."""
+    cfg = _base_config()
+    rng = np.random.default_rng(41)
+    teams = generate_teams(cfg, rng)
+    arrs = teams_to_arrays(teams)
+    cumulative = np.zeros(cfg.num_teams, dtype=int)
+    for m in range(1, 101):
+        r = simulate_match(arrs, cumulative, m, cfg, rng)
+        expected = max(0, r.death_events - r.neutral_deaths) + r.revived_knocks
+        assert r.total_knocks == expected
+        cumulative = cumulative + r.team_scores
+
+
+def test_10_transferred_kills_remove_placement_bias():
+    """With transfer_kill_rate=1 every scored kill goes through the steal
+    distribution, which ignores placement_kill_factor. With identical team
+    fight_skill (strength_sigma=0), first-place and last-place teams should
+    therefore receive roughly equal kill shares.
+    """
+    cfg = _base_config(
+        strength_sigma=0.0,
+        transfer_kill_rate=1.0,
+        mp_pressure_enabled=False,
+        chaos_multiplier=1.0,
+    )
+    rng = np.random.default_rng(31)
+    teams = generate_teams(cfg, rng)
+    arrs = teams_to_arrays(teams)
+    cumulative = np.zeros(cfg.num_teams, dtype=int)
+    first_kills = last_kills = total = 0
+    for m in range(1, 401):
+        r = simulate_match(arrs, cumulative, m, cfg, rng)
+        first_tid = int(r.placements[0])
+        last_tid = int(r.placements[-1])
+        first_kills += int(r.team_kills[first_tid])
+        last_kills += int(r.team_kills[last_tid])
+        total += int(r.scored_kills)
+        cumulative = cumulative + r.team_scores
+
+    first_share = first_kills / total
+    last_share = last_kills / total
+    # Without placement bias, both should be near 1/20 = 0.05.
+    assert abs(first_share - last_share) < 0.03, (
+        f"transfer_kill_rate=1 should erase placement bias: "
+        f"first={first_share:.4f}, last={last_share:.4f}"
+    )
+
+
 def test_8_revived_knocks_independent_of_kills():
     """Multiplying revive_knock_mean by 5x must not change death_events or scored_kills
     on average."""

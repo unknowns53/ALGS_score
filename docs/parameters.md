@@ -74,12 +74,34 @@ CLI フラグは `--<field-name with hyphens>` で対応。JSON ではフィー�
 
 | フィールド | 型 | 既定値 | 説明 |
 |---|---|---|---|
-| `neutral_death_rate` | float | 0.01 | 中立死（リング・地形死）の比率 |
-| `lost_kill_rate` | float | 0.03 | キルポイント消滅の基準比率 |
-| `transfer_kill_rate` | float | 0.05 | scored_kills のうち他チームに移転する比率 |
+| `neutral_death_rate` | float | 0.01 | 中立死（リング・地形死）の比率。ノック由来でない死亡 |
+| `lost_kill_rate` | float | 0.03 | ノックしたがチームスコアに計上されなかった比率（自チーム全滅・第三者干渉等） |
+| `transfer_kill_rate` | float | 0.05 | scored_kills のうち漁夫で別チームに渡る比率。実配分にも反映され、漁夫先は順位非依存・fight_skill のみの重みで抽選される |
 | `revive_knock_mean` | float | 10.0 | 復活ノックの平均（死亡イベント・scored_kills と独立） |
 | `chaos_multiplier` | float | 1.0 | lost_kill_rate に掛かる全体カオス係数（仕様書に値の指定なし、こちらで設定） |
 | `mp_pressure_lost_kill_multiplier` | float | 1.25 | eligible team が 1 つでも居る試合に lost_kill_rate へ乗算 |
+
+ノック関連は陽に変数化してある:
+
+```
+total_knocks = (death_events - neutral_deaths) + revived_knocks
+             = scored_kills + lost_kill_points + revived_knocks
+```
+
+- `death_events`: 確定死亡数（中立死含む）
+- `neutral_deaths`: そのうち地形・リング死（ノック由来でない）
+- `death_events - neutral_deaths`: ノック由来の確定死亡
+- `lost_kill_points`: ノックしたが確定キル化に失敗した数
+- `scored_kills`: チームスコアに計上された確定キル数
+- `transferred_kills`: scored_kills のうち漁夫で別チームに渡った数
+- `revived_knocks`: ノックされたが復活して死亡にならなかった数
+- `total_knocks`: その試合の総ノック数（テレメトリで `avg total knocks per match` として出力される）
+
+キル配分は 2 段階で行われる:
+1. `scored_kills - transferred_kills` 個 → 順位＋fight_skill の重みで多項配分（`PLACEMENT_KILL_FACTOR` が効く）
+2. `transferred_kills` 個 → fight_skill のみの重みで多項配分（順位は無視）
+
+両者の合算がチームの最終キル数。総量は scored_kills で保存される。
 
 ### Match Point 圧力
 
@@ -105,7 +127,16 @@ CLI フラグは `--<field-name with hyphens>` で対応。JSON ではフィー�
 
 ### 順位別キル配分倍率 `PLACEMENT_KILL_FACTOR`
 
-順位 1〜20 のキル配分重みに乗る倍率（上位ほどキル多く取りやすい現実を反映）。
+順位 1〜20 のキル配分重みに乗る倍率。「均等 3 ポイント配分に傾斜」ではなく、各チームの **相対的な配分重み** を表す。実際の配分は次の流れ:
+
+```
+log_weight_i = kill_beta * fight_skill_i + log(PLACEMENT_KILL_FACTOR[placement_i])
+probs        = softmax(log_weight)
+team_kills   = multinomial(scored_kills - transferred_kills, probs)
+            + multinomial(transferred_kills, fight_skill のみの重み)
+```
+
+つまり `1.35` と `0.45` は絶対値ではなく **softmax 後の確率比** に効く。値自体に意味があるのではなく、上位／下位の比 (約 3:1) に意味がある。
 
 ```
 1st:        1.35

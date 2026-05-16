@@ -57,6 +57,7 @@ class SummaryResult:
     avg_lost_kill_points: float = 0.0
     avg_transferred_kills: float = 0.0
     avg_revived_knocks: float = 0.0
+    avg_total_knocks: float = 0.0
     avg_total_lobby_score: float = 0.0
     avg_top_team_score: float = 0.0
     avg_score_gap_1st_2nd: float = 0.0
@@ -160,6 +161,7 @@ def summarize(results: list[TournamentResult], cfg: SimulationConfig) -> Summary
     match_lost = []
     match_transferred = []
     match_revived = []
+    match_total_knocks = []
     match_lobby_score = []
     match_top_score = []
     match_score_gap = []
@@ -182,6 +184,7 @@ def summarize(results: list[TournamentResult], cfg: SimulationConfig) -> Summary
             match_lost.append(m.lost_kill_points)
             match_transferred.append(m.transferred_kills)
             match_revived.append(m.revived_knocks)
+            match_total_knocks.append(m.total_knocks)
             total_lobby = int(m.team_scores.sum())
             match_lobby_score.append(total_lobby)
             sorted_scores = np.sort(m.team_scores)[::-1]
@@ -232,6 +235,7 @@ def summarize(results: list[TournamentResult], cfg: SimulationConfig) -> Summary
         avg_lost_kill_points=float(np.mean(match_lost)),
         avg_transferred_kills=float(np.mean(match_transferred)),
         avg_revived_knocks=float(np.mean(match_revived)),
+        avg_total_knocks=float(np.mean(match_total_knocks)),
         avg_total_lobby_score=float(np.mean(match_lobby_score)),
         avg_top_team_score=float(np.mean(match_top_score)),
         avg_score_gap_1st_2nd=float(np.mean(match_score_gap)),
@@ -332,6 +336,7 @@ def format_summary_text(summary: SummaryResult) -> str:
     lines.append(f"- avg lost kill points per match: {summary.avg_lost_kill_points:.2f}")
     lines.append(f"- avg transferred kills per match: {summary.avg_transferred_kills:.2f}")
     lines.append(f"- avg revived knocks per match: {summary.avg_revived_knocks:.2f}")
+    lines.append(f"- avg total knocks per match: {summary.avg_total_knocks:.2f}")
     lines.append(f"- avg total lobby score per match: {summary.avg_total_lobby_score:.2f}")
     lines.append(f"- avg top team score per match: {summary.avg_top_team_score:.2f}")
     lines.append(f"- avg score gap 1st-2nd per match: {summary.avg_score_gap_1st_2nd:.2f}")
