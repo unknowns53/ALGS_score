@@ -1,0 +1,13 @@
+{
+  "sims": 20000,
+  "seed": 7,
+  "region_profile": "apac_n",
+  "strength_sigma": 0.20,
+  "respawn_mean": 9.0,
+  "mp_win_penalty": 0.25,
+  "starting_points": "custom",
+  "custom_starting_points": [5, 4, 3, 3, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "output_csv": "out/custom.csv",
+  "output_json": "out/custom.json",
+  "output_plot": "out/custom.png"
+}

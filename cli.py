@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 from config import REGION_PROFILES, SimulationConfig, apply_region_profile
@@ -17,12 +18,31 @@ REGION_CHOICES = ["custom", "americas", "emea", "apac_n", "apac_s"]
 STARTING_CHOICES = ["none", "seeded", "custom"]
 DEFAULT_OUT_DIR = Path("out")
 
+# Run-level keys that may appear in a JSON config file alongside
+# SimulationConfig fields.
+RUN_LEVEL_JSON_KEYS = {
+    "sims", "seed",
+    "starting_points",          # alias for starting_points_mode
+    "output_csv", "output_json", "output_plot",
+    "make_plot", "print_summary", "show_progress",
+}
+
+# Fields of SimulationConfig that may be set from JSON.
+_CONFIG_FIELD_NAMES = {f.name for f in fields(SimulationConfig)}
+
+# Union of accepted JSON keys.
+ALLOWED_JSON_KEYS = _CONFIG_FIELD_NAMES | RUN_LEVEL_JSON_KEYS
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="algs_sim",
         description="ALGS Match Point Finals Monte Carlo simulator",
     )
+    # JSON config file
+    p.add_argument("--config", type=str, default=None,
+                   help="path to a JSON config file (CLI flags still override)")
+
     # Top-level run config
     p.add_argument("--sims", type=int, default=None)
     p.add_argument("--seed", type=int, default=None)
@@ -80,6 +100,28 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _load_json_config(path: str | Path) -> dict:
+    """Load a JSON config file and validate top-level keys."""
+    p = Path(path)
+    if not p.is_file():
+        raise FileNotFoundError(f"config file not found: {p}")
+    with p.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"config JSON must contain an object at the top level: {p}")
+
+    unknown = set(data.keys()) - ALLOWED_JSON_KEYS
+    if unknown:
+        allowed_preview = sorted(ALLOWED_JSON_KEYS)
+        print(
+            f"warning: unknown keys in {p}: {sorted(unknown)}\n"
+            f"         (valid keys include: "
+            f"{', '.join(allowed_preview[:8])}, ...)",
+            file=sys.stderr,
+        )
+    return data
+
+
 def _prompt(label: str, default: str) -> str:
     """Prompt with [default] suffix; empty input returns the default."""
     raw = input(f"{label} [{default}]: ").strip()
@@ -125,84 +167,134 @@ def _interactive_inputs() -> dict:
     return out
 
 
-def _build_config(ns: argparse.Namespace, interactive: dict | None) -> tuple[
-    SimulationConfig, int, int | None, str, str, str | None, bool
-]:
-    """Compose final SimulationConfig and run-level settings."""
-    base = SimulationConfig()
+def _pick(*candidates):
+    """Return the first candidate that is not None / empty marker."""
+    for c in candidates:
+        if c is not None:
+            return c
+    return None
 
-    region = ns.region_profile
-    if region is None and interactive is not None:
-        region = interactive["region_profile"]
-    region = region or "custom"
+
+def _build_config(
+    ns: argparse.Namespace,
+    interactive: dict | None,
+    json_cfg: dict | None,
+) -> tuple[SimulationConfig, int, int | None, str, str, str | None, bool]:
+    """Compose SimulationConfig and run-level settings.
+
+    Priority: CLI flag > JSON config > interactive prompt > built-in default.
+    """
+    base = SimulationConfig()
+    json_cfg = json_cfg or {}
+    interactive = interactive or {}
+
+    # Region profile is special: applied first so per-field overrides win.
+    region = _pick(
+        ns.region_profile,
+        json_cfg.get("region_profile"),
+        interactive.get("region_profile"),
+    ) or "custom"
     cfg = apply_region_profile(base, region)
 
-    # Build overrides dict from CLI args (only non-None entries override)
-    override_map = {
-        "max_matches": ns.max_matches,
-        "match_point_threshold": ns.match_point_threshold,
-        "strength_sigma": ns.strength_sigma,
-        "rank_beta": ns.rank_beta,
-        "kill_beta": ns.kill_beta,
-        "win_beta": ns.win_beta,
-        "consistency_beta": ns.consistency_beta,
-        "placement_fight_correlation": ns.placement_fight_correlation,
-        "placement_win_correlation": ns.placement_win_correlation,
-        "base_match_noise": ns.base_match_noise,
-        "volatility_mean": ns.volatility_mean,
-        "volatility_sigma": ns.volatility_sigma,
-        "respawn_model": ns.respawn_model,
-        "respawn_mean": ns.respawn_mean,
-        "respawn_dispersion": ns.respawn_dispersion,
-        "max_respawned_players": ns.max_respawned_players,
-        "neutral_death_rate": ns.neutral_death_rate,
-        "lost_kill_rate": ns.lost_kill_rate,
-        "transfer_kill_rate": ns.transfer_kill_rate,
-        "revive_knock_mean": ns.revive_knock_mean,
-        "chaos_multiplier": ns.chaos_multiplier,
-        "mp_pressure_lost_kill_multiplier": ns.mp_pressure_lost_kill_multiplier,
-        "mp_pressure_enabled": ns.mp_pressure_enabled,
-        "mp_win_penalty": ns.mp_win_penalty,
-        "mp_kill_penalty": ns.mp_kill_penalty,
-    }
-    overrides = {k: v for k, v in override_map.items() if v is not None}
+    # Per-field overrides (SimulationConfig fields except region/starting points,
+    # which need special handling).
+    field_keys = [
+        "max_matches", "match_point_threshold",
+        "strength_sigma", "rank_beta", "kill_beta", "win_beta",
+        "consistency_beta",
+        "placement_fight_correlation", "placement_win_correlation",
+        "base_match_noise", "volatility_mean", "volatility_sigma",
+        "respawn_model", "respawn_mean", "respawn_dispersion",
+        "max_respawned_players",
+        "champion_remaining_min", "champion_remaining_max",
+        "neutral_death_rate", "lost_kill_rate", "transfer_kill_rate",
+        "revive_knock_mean", "chaos_multiplier",
+        "mp_pressure_lost_kill_multiplier",
+        "mp_pressure_enabled", "mp_win_penalty", "mp_kill_penalty",
+        "num_teams", "players_per_team",
+    ]
+    overrides: dict = {}
+    for key in field_keys:
+        cli_value = getattr(ns, key, None)
+        chosen = _pick(cli_value, json_cfg.get(key))
+        if chosen is not None:
+            overrides[key] = chosen
     if overrides:
         cfg = replace(cfg, **overrides)
 
-    # Starting points
-    starting_points_mode = ns.starting_points
-    custom_sp_raw = ns.custom_starting_points
-    if starting_points_mode is None and interactive is not None:
-        starting_points_mode = interactive["starting_points"]
-        if starting_points_mode == "custom" and interactive.get("custom_starting_points"):
-            custom_sp_raw = interactive["custom_starting_points"]
-    starting_points_mode = starting_points_mode or cfg.starting_points_mode
+    # Starting points (accept both "starting_points" and "starting_points_mode" in JSON)
+    starting_points_mode = _pick(
+        ns.starting_points,
+        json_cfg.get("starting_points"),
+        json_cfg.get("starting_points_mode"),
+        interactive.get("starting_points"),
+        cfg.starting_points_mode,
+    )
+
+    custom_sp_raw = _pick(
+        ns.custom_starting_points,
+        json_cfg.get("custom_starting_points"),
+        interactive.get("custom_starting_points"),
+    )
 
     custom_tuple = None
     if starting_points_mode == "custom":
-        if not custom_sp_raw:
+        if custom_sp_raw is None:
             raise ValueError(
                 "custom starting points selected but no values were provided"
             )
-        custom_tuple = tuple(int(x.strip()) for x in custom_sp_raw.split(",") if x.strip())
-    cfg = replace(cfg, starting_points_mode=starting_points_mode,
-                  custom_starting_points=custom_tuple)
+        if isinstance(custom_sp_raw, (list, tuple)):
+            custom_tuple = tuple(int(x) for x in custom_sp_raw)
+        else:
+            custom_tuple = tuple(
+                int(x.strip()) for x in str(custom_sp_raw).split(",") if x.strip()
+            )
+    cfg = replace(
+        cfg,
+        starting_points_mode=starting_points_mode,
+        custom_starting_points=custom_tuple,
+    )
 
     # Run-level
-    sims = ns.sims if ns.sims is not None else (interactive or {}).get("sims", 10000)
-    seed = ns.seed if ns.seed is not None else (interactive or {}).get("seed", None)
+    sims = _pick(ns.sims, json_cfg.get("sims"), interactive.get("sims"), 10000)
+    seed = _pick(ns.seed, json_cfg.get("seed"), interactive.get("seed"))
 
-    out_csv = ns.output_csv or (interactive or {}).get("output_csv",
-                                                       str(DEFAULT_OUT_DIR / "summary.csv"))
-    out_json = ns.output_json or (interactive or {}).get("output_json",
-                                                         str(DEFAULT_OUT_DIR / "summary.json"))
-    if ns.make_plot:
-        out_plot = ns.output_plot or (interactive or {}).get("output_plot",
-                                                             str(DEFAULT_OUT_DIR / "histogram.png"))
+    out_csv = _pick(
+        ns.output_csv, json_cfg.get("output_csv"),
+        interactive.get("output_csv"),
+        str(DEFAULT_OUT_DIR / "summary.csv"),
+    )
+    out_json = _pick(
+        ns.output_json, json_cfg.get("output_json"),
+        interactive.get("output_json"),
+        str(DEFAULT_OUT_DIR / "summary.json"),
+    )
+
+    # make_plot may be turned off via CLI (--no-plot) or JSON (make_plot=false).
+    make_plot_flag = ns.make_plot
+    if "make_plot" in json_cfg and ns.make_plot is True:
+        # CLI default is True, so JSON wins unless user explicitly passed --no-plot
+        # (which sets make_plot=False -- detected below).
+        make_plot_flag = bool(json_cfg["make_plot"])
+    if ns.make_plot is False:
+        make_plot_flag = False
+
+    if make_plot_flag:
+        out_plot = _pick(
+            ns.output_plot, json_cfg.get("output_plot"),
+            interactive.get("output_plot"),
+            str(DEFAULT_OUT_DIR / "histogram.png"),
+        )
     else:
         out_plot = None
 
-    return cfg, int(sims), seed, out_csv, out_json, out_plot, bool(ns.show_progress)
+    show_progress = bool(_pick(
+        ns.show_progress if ns.show_progress else None,
+        json_cfg.get("show_progress"),
+        False,
+    ))
+
+    return cfg, int(sims), seed, out_csv, out_json, out_plot, show_progress
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -210,20 +302,30 @@ def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     ns = parser.parse_args(argv)
 
+    json_cfg: dict | None = None
+    if ns.config:
+        json_cfg = _load_json_config(ns.config)
+
     interactive = None
+    # Interactive prompt only when no args AND no config file given.
     if not argv:
         interactive = _interactive_inputs()
 
     cfg, sims, seed, out_csv, out_json, out_plot, show_progress = _build_config(
-        ns, interactive
+        ns, interactive, json_cfg
     )
+
+    # print_summary respects JSON too.
+    print_summary = ns.print_summary
+    if json_cfg is not None and "print_summary" in json_cfg and ns.print_summary is True:
+        print_summary = bool(json_cfg["print_summary"])
 
     print(f"Running {sims} simulations (region={cfg.region_profile}, "
           f"starting_points={cfg.starting_points_mode}, seed={seed}) ...")
     results = run_simulations(cfg, n_sims=sims, seed=seed, show_progress=show_progress)
     summary = summarize(results, cfg)
 
-    if ns.print_summary:
+    if print_summary:
         print()
         print(format_summary_text(summary))
         print()

@@ -42,7 +42,28 @@ python -m cli --sims 50000 --region-profile apac_n --seed 42 `
 - `--max-matches` 大会の打ち切り試合数（デフォルト 30）
 - `--match-point-threshold` Match Point 点灯閾値（デフォルト 50）
 - 強度・キル・順位の β / 相関、リスポーンモデル、キル消滅・移転率、Match Point 圧力など、仕様書記載の全パラメータに対応する `--*` フラグ
+- `--config PATH` で JSON 設定ファイルを読み込み
 - `--no-plot` で PNG 生成スキップ
+
+### JSON 設定ファイル
+
+毎回大量の引数を打つのが面倒なので、`--config` で JSON にまとめて渡せる。CLI 引数を併用したときは **CLI > JSON > リージョンプロファイル > 既定値** の優先順位で解決される。
+
+```powershell
+python -m cli --config examples\apac_n_preset.json
+# CLI で部分上書きもできる:
+python -m cli --config examples\apac_n_preset.json --sims 5000 --seed 99
+```
+
+JSON のキーは `SimulationConfig` のフィールド名（snake_case）と一致するものが全部使える。加えて以下の実行レベルキーも受け付ける:
+
+- `sims`, `seed`
+- `starting_points`（`starting_points_mode` でも可）, `custom_starting_points`（配列 or カンマ区切り文字列）
+- `region_profile`
+- `output_csv`, `output_json`, `output_plot`
+- `make_plot`, `print_summary`, `show_progress`
+
+`examples\apac_n_preset.json` に APAC-N プリセットのフル定義、`examples\custom_minimal.json` に一部だけ上書きする最小例がある。知らないキーが入っていたら標準エラーに警告を出すから、typo はそこで気付ける。
 
 ## ファイル構成
 

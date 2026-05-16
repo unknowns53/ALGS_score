@@ -1,0 +1,39 @@
+{
+  "sims": 50000,
+  "seed": 42,
+  "region_profile": "apac_n",
+
+  "max_matches": 30,
+  "match_point_threshold": 50,
+
+  "strength_sigma": 0.30,
+  "rank_beta": 0.85,
+  "kill_beta": 0.75,
+  "win_beta": 0.65,
+  "consistency_beta": 0.40,
+  "placement_fight_correlation": 0.45,
+  "placement_win_correlation": 0.35,
+  "base_match_noise": 1.00,
+  "volatility_mean": 1.10,
+  "volatility_sigma": 0.30,
+
+  "respawn_model": "negbin",
+  "respawn_mean": 7.0,
+  "respawn_dispersion": 3.0,
+
+  "neutral_death_rate": 0.01,
+  "lost_kill_rate": 0.04,
+  "transfer_kill_rate": 0.06,
+  "revive_knock_mean": 12.0,
+
+  "mp_pressure_enabled": true,
+  "mp_win_penalty": 0.15,
+  "mp_kill_penalty": 0.05,
+  "mp_pressure_lost_kill_multiplier": 1.35,
+
+  "starting_points": "seeded",
+
+  "output_csv": "out/apac_n.csv",
+  "output_json": "out/apac_n.json",
+  "output_plot": "out/apac_n.png"
+}
