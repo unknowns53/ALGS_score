@@ -153,8 +153,9 @@ def _interactive_inputs() -> dict:
 
     print()
     print("出発点設定: none / seeded / custom")
-    sp = _prompt("選択", "seeded")
-    out["starting_points"] = sp if sp in STARTING_CHOICES else "seeded"
+    print("  （現行 ALGS は持ち越し点なし。明示的な理由が無ければ none 推奨）")
+    sp = _prompt("選択", "none")
+    out["starting_points"] = sp if sp in STARTING_CHOICES else "none"
     if out["starting_points"] == "custom":
         cs = _prompt("20個の整数をカンマ区切りで入力", "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
         out["custom_starting_points"] = cs
@@ -207,6 +208,7 @@ def _build_config(
         "respawn_model", "respawn_mean", "respawn_dispersion",
         "max_respawned_players",
         "champion_remaining_min", "champion_remaining_max",
+        "champion_remaining_weights",
         "neutral_death_rate", "lost_kill_rate", "transfer_kill_rate",
         "revive_knock_mean", "chaos_multiplier",
         "mp_pressure_lost_kill_multiplier",
@@ -217,8 +219,12 @@ def _build_config(
     for key in field_keys:
         cli_value = getattr(ns, key, None)
         chosen = _pick(cli_value, json_cfg.get(key))
-        if chosen is not None:
-            overrides[key] = chosen
+        if chosen is None:
+            continue
+        # JSON arrays come back as lists; coerce to tuple for tuple-typed fields.
+        if key == "champion_remaining_weights" and isinstance(chosen, list):
+            chosen = tuple(float(x) for x in chosen)
+        overrides[key] = chosen
     if overrides:
         cfg = replace(cfg, **overrides)
 
@@ -288,11 +294,11 @@ def _build_config(
     else:
         out_plot = None
 
-    show_progress = bool(_pick(
-        ns.show_progress if ns.show_progress else None,
-        json_cfg.get("show_progress"),
-        False,
-    ))
+    # show_progress: CLI --show-progress (store_true) wins if set; otherwise honour JSON.
+    if ns.show_progress:
+        show_progress = True
+    else:
+        show_progress = bool(json_cfg.get("show_progress", False))
 
     return cfg, int(sims), seed, out_csv, out_json, out_plot, show_progress
 

@@ -31,7 +31,7 @@
   "mp_kill_penalty": 0.05,
   "mp_pressure_lost_kill_multiplier": 1.35,
 
-  "starting_points": "seeded",
+  "starting_points": "none",
 
   "output_csv": "out/apac_n.csv",
   "output_json": "out/apac_n.json",

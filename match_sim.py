@@ -57,9 +57,25 @@ def sample_respawned_players(cfg: SimulationConfig, rng: np.random.Generator) ->
 
 
 def sample_champion_remaining(cfg: SimulationConfig, rng: np.random.Generator) -> int:
+    """Weighted sample of the champion squad's living-player count at match end.
+
+    The weights tuple has one entry per value in [min, max] (inclusive). The
+    default config skews heavily to the maximum (3), reflecting that ALGS
+    champion squads usually finish with all three players alive.
+    """
     lo = cfg.champion_remaining_min
     hi = cfg.champion_remaining_max
-    return int(rng.integers(lo, hi + 1))
+    values = np.arange(lo, hi + 1)
+    weights = np.asarray(cfg.champion_remaining_weights, dtype=float)
+    if weights.shape[0] != values.shape[0]:
+        raise ValueError(
+            f"champion_remaining_weights length {weights.shape[0]} does not match "
+            f"range [{lo}, {hi}] ({values.shape[0]} values)"
+        )
+    if (weights < 0).any() or weights.sum() <= 0:
+        raise ValueError("champion_remaining_weights must be non-negative and sum > 0")
+    probs = weights / weights.sum()
+    return int(rng.choice(values, p=probs))
 
 
 def sample_death_events(respawned: int, champion_remaining: int, num_teams: int = 20,
@@ -100,7 +116,12 @@ def sample_kill_credit(
 
 
 def sample_revived_knocks(cfg: SimulationConfig, rng: np.random.Generator) -> int:
-    """Revived knocks are independent of death_events and scored_kills."""
+    """Revived knocks are independent of death_events and scored_kills.
+
+    The spec gives revive_knock_mean but no separate dispersion parameter,
+    so we reuse respawn_dispersion (clamped to >=1) as a reasonable proxy
+    for "how chaotic the lobby is" -- revives correlate with overall chaos.
+    """
     if cfg.respawn_model == "poisson":
         return int(rng.poisson(cfg.revive_knock_mean))
     return _sample_negbin_mean_dispersion(

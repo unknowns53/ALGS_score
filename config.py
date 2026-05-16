@@ -24,8 +24,11 @@ PLACEMENT_KILL_FACTOR: tuple[float, ...] = (
     0.45, 0.45, 0.45, 0.45, 0.45,
 )
 
-# "seeded" starting points: stronger seeds get a small bonus before match 1.
-# Loosely based on ALGS Year 4 Champs Match Point Finals (top seeds carry over).
+# Legacy "seeded" starting points. The current ALGS Match Point Finals format
+# does NOT carry seed bonuses into the final, so this table is only used when
+# the user explicitly opts in via --starting-points seeded. The default mode
+# is "none" (everyone starts at 0).
+# Values loosely follow earlier ALGS years when seed bonuses did exist.
 STARTING_POINTS_SEEDED: tuple[int, ...] = (
     3, 3,           # seeds 1-2
     2, 2, 2, 2,     # seeds 3-6
@@ -45,8 +48,10 @@ class SimulationConfig:
     max_matches: int = 30
     match_point_threshold: int = 50
 
-    # Starting points
-    starting_points_mode: StartingPointsMode = "seeded"
+    # Starting points. Default "none" matches current ALGS Match Point Finals,
+    # which start every team at 0. Use "seeded" only when the user explicitly
+    # wants the legacy seed-bonus table from STARTING_POINTS_SEEDED.
+    starting_points_mode: StartingPointsMode = "none"
     custom_starting_points: tuple[int, ...] | None = None
 
     # Team strength
@@ -67,9 +72,14 @@ class SimulationConfig:
     respawn_dispersion: float = 4.0
     max_respawned_players: int = 30
 
-    # Champion remaining players at match end (uniform 1..3 by default).
+    # Champion remaining players at match end. Sampled from the inclusive range
+    # [champion_remaining_min, champion_remaining_max] using the weights tuple
+    # below. In real ALGS finals the champion squad usually finishes with all
+    # three alive, so the default heavily favours 3 (about 5% / 20% / 75% for
+    # 1 / 2 / 3 alive, mean ≈ 2.7).
     champion_remaining_min: int = 1
     champion_remaining_max: int = 3
+    champion_remaining_weights: tuple[float, ...] = (1.0, 4.0, 15.0)
 
     # Kill credit model
     neutral_death_rate: float = 0.01

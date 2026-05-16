@@ -93,15 +93,16 @@ tests\               pytest 一式
 - **eligibility は試合開始時点で評価**: 大会終了の判定は `eligible_before[winner_idx]` を見ているため、49 点で 1 位を取ってその試合で 61 点に到達しても大会は終わらない（仕様書テスト 4）
 - 開始時点で 50 点以上のチームが 1 位を取った試合のみ大会終了（仕様書テスト 5）
 
-## 出発点プリセット
+## 出発点（starting points）について
 
-`--starting-points seeded` のときの加算値（シード 1〜20 順）:
+現行 ALGS の Match Point Finals は **持ち越し点なし**（全チームが 0 点から開始）。よって **既定値は `--starting-points none`** で、対話プロンプト・JSON 設定でも明示しない限り 0 点開始になる。
 
-```
-3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-```
+`seeded` と `custom` はレガシー互換 / 実験用に残してある選択肢で、ユーザーが明示的に指定したときだけ使われる:
 
-これは ALGS Year 4 Champs の Match Point Finals 加算ベース。値は `config.py` の `STARTING_POINTS_SEEDED` で定義してあるので、変えたいときはここを書き換えるか `--starting-points custom --custom-starting-points "..."` で上書き。
+- `--starting-points seeded`: `config.py` の `STARTING_POINTS_SEEDED` テーブル（シード 1〜20 順に `3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0`）を適用。過去フォーマットで持ち越し点があった時代を模倣したいときに使う。
+- `--starting-points custom --custom-starting-points "..."`: 20 個のカンマ区切り整数を直接指定。JSON では `"custom_starting_points": [5, 4, ...]` のように配列でも書ける。
+
+`seeded` テーブルを書き換えたければ `config.py` の `STARTING_POINTS_SEEDED` を直接編集できる。
 
 ## 仕様書に明示が無くこちら側で決めた値
 
@@ -109,7 +110,7 @@ tests\               pytest 一式
 |---|---|---|
 | `consistency_beta` | 0.4 | 仕様書 Recommended default config に値が無いため |
 | `chaos_multiplier` | 1.0 | 仕様書 Parameters 一覧には在るが値の指定が無い |
-| `champion_remaining` | 1〜3 一様抽出 | 仕様書「Usually 1 to 3」の素直な解釈 |
+| `champion_remaining` | 1〜3 の重み付き抽選（既定で約 5% / 20% / 75%、平均 ≒ 2.7） | 仕様書「Usually 1 to 3」を満たしつつ、現実の優勝チームはほぼ全員生存で締めるため 3 寄せ。`champion_remaining_weights` で調整可能 |
 | `mp_pressure_lost_kill_multiplier` の適用条件 | eligible team が 1 つでも存在する試合に乗算 | 仕様書記述の素直な解釈 |
 | Americas / EMEA / APAC-S プリセット数値 | 仕様書「特徴」記述から推測 | 仕様書には APAC-N preset のみ数値が記載 |
 

@@ -38,8 +38,8 @@ def test_sanity_1_baseline_centers_8_to_11():
 
 
 def test_sanity_2_higher_strength_sigma_shortens_tournaments():
-    low = SimulationConfig(strength_sigma=0.20, starting_points_mode="seeded")
-    high = SimulationConfig(strength_sigma=0.60, starting_points_mode="seeded")
+    low = SimulationConfig(strength_sigma=0.20, starting_points_mode="none")
+    high = SimulationConfig(strength_sigma=0.60, starting_points_mode="none")
     r_lo = run_simulations(low, n_sims=400, seed=11)
     r_hi = run_simulations(high, n_sims=400, seed=11)
     m_lo = _mean_length(r_lo)
@@ -53,10 +53,10 @@ def test_sanity_2_higher_strength_sigma_shortens_tournaments():
 def test_sanity_3_higher_respawn_mean_shortens_tournaments():
     low = SimulationConfig(respawn_mean=4.0, respawn_dispersion=4.0,
                            respawn_model="negbin",
-                           starting_points_mode="seeded")
+                           starting_points_mode="none")
     high = SimulationConfig(respawn_mean=10.0, respawn_dispersion=4.0,
                             respawn_model="negbin",
-                            starting_points_mode="seeded")
+                            starting_points_mode="none")
     r_lo = run_simulations(low, n_sims=400, seed=17)
     r_hi = run_simulations(high, n_sims=400, seed=17)
     m_lo = _mean_length(r_lo)
@@ -68,8 +68,8 @@ def test_sanity_3_higher_respawn_mean_shortens_tournaments():
 
 
 def test_sanity_4_higher_lost_kill_rate_lengthens_tournaments():
-    low = SimulationConfig(lost_kill_rate=0.0, starting_points_mode="seeded")
-    high = SimulationConfig(lost_kill_rate=0.08, starting_points_mode="seeded")
+    low = SimulationConfig(lost_kill_rate=0.0, starting_points_mode="none")
+    high = SimulationConfig(lost_kill_rate=0.08, starting_points_mode="none")
     r_lo = run_simulations(low, n_sims=400, seed=23)
     r_hi = run_simulations(high, n_sims=400, seed=23)
     m_lo = _mean_length(r_lo)
@@ -81,7 +81,7 @@ def test_sanity_4_higher_lost_kill_rate_lengthens_tournaments():
 
 
 def test_sanity_5_apac_n_longer_and_more_variable_than_americas():
-    base = SimulationConfig(starting_points_mode="seeded")
+    base = SimulationConfig(starting_points_mode="none")
     cfg_amer = apply_region_profile(base, "americas")
     cfg_apac = apply_region_profile(base, "apac_n")
     r_amer = run_simulations(cfg_amer, n_sims=500, seed=29)
