@@ -74,14 +74,16 @@ def main() -> int:
             bbox=dict(facecolor="white", edgecolor="#D1D5DB",
                       boxstyle="round,pad=0.4"))
 
-    # Per-bar probability label (only on bars with prob >= 5%, to keep
-    # the chart from being noisy at the tails).
+    # Per-bar probability label. We label every bar that rounds to >= 0.1%
+    # so the tails (5 / 13 / 14 matches) get their numbers shown too; only
+    # the practically invisible <= 0.05% bars (3-match case) are skipped.
     for bar, p in zip(bars, probs):
-        if p >= 5.0:
-            ax.text(bar.get_x() + bar.get_width() / 2,
-                    bar.get_height() + ymax * 0.015,
-                    f"{p:.1f}%", ha="center", va="bottom",
-                    fontsize=8.5, color="#1F2937")
+        if p < 0.05:
+            continue
+        ax.text(bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + ymax * 0.015,
+                f"{p:.1f}%", ha="center", va="bottom",
+                fontsize=8.5, color="#1F2937")
 
     fig.tight_layout()
     out_path = OUT / "plot_equal_sweep_base.png"
