@@ -74,6 +74,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lost-kill-rate", type=float, default=None)
     p.add_argument("--transfer-kill-rate", type=float, default=None)
     p.add_argument("--revive-knock-mean", type=float, default=None)
+    p.add_argument("--placement-kill-sharpness", type=float, default=None,
+                   help="log-space scaling around the geometric mean of the "
+                        "per-placement kill factor tuple. 1.0 = base, "
+                        "0.0 = uniform, >1.0 = sharper")
     p.add_argument("--chaos-multiplier", type=float, default=None)
     p.add_argument("--mp-pressure-lost-kill-multiplier", type=float, default=None)
 
@@ -216,6 +220,7 @@ def _build_config(
         "neutral_death_rate", "lost_kill_rate", "transfer_kill_rate",
         "revive_knock_mean", "chaos_multiplier",
         "mp_pressure_lost_kill_multiplier",
+        "placement_kill_sharpness",
         "mp_pressure_enabled", "mp_win_penalty", "mp_kill_penalty",
         "num_teams", "players_per_team",
     ]

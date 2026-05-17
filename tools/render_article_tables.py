@@ -170,7 +170,30 @@ def table_mp_pressure_3() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Table 4: transfer_kill_rate (Section 5)
+# Table 4: placement_kill_sharpness (Section 5 — new)
+# ---------------------------------------------------------------------------
+def table_placement_kill_sharpness() -> Path:
+    headers = ["placement_kill_sharpness", "Mean", "first MP",
+               "elig@end", "Scored kills"]
+    rows = [
+        ["0.00 (全順位均等)", "9.70", "7.10", "9.41", "57.39"],
+        ["0.50", "9.39", "6.44", "8.58", "57.32"],
+        ["1.00 (base)", "9.06", "5.78", "8.01", "57.27"],
+        ["1.50", "8.75", "5.21", "7.53", "57.22"],
+        ["2.00 (上位独占)", "8.50", "4.78", "7.21", "57.19"],
+    ]
+    return render_table(
+        headers, rows,
+        filename="table_4_placement_kill_sharpness.png",
+        col_widths=[3.2, 1.4, 1.6, 1.6, 2.0],
+        highlight_rows=[2],
+        bold_cols=[1],
+        fontsize=10,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Table 5: transfer_kill_rate (Section 6)
 # ---------------------------------------------------------------------------
 def table_transfer_kill_rate() -> Path:
     headers = ["transfer_kill_rate", "Mean ending match", "Scored kills / match"]
@@ -183,14 +206,14 @@ def table_transfer_kill_rate() -> Path:
     ]
     return render_table(
         headers, rows,
-        filename="table_4_transfer_kill_rate.png",
+        filename="table_5_transfer_kill_rate.png",
         col_widths=[2.4, 2.4, 2.6],
         highlight_rows=[2],
     )
 
 
 # ---------------------------------------------------------------------------
-# Table 5: Inert parameters (Section 6)
+# Table 6: Inert parameters (Section 7)
 # ---------------------------------------------------------------------------
 def table_inert_params() -> Path:
     headers = ["Parameter", "Meaning"]
@@ -212,14 +235,14 @@ def table_inert_params() -> Path:
     ]
     return render_table(
         headers, rows,
-        filename="table_5_inert_params.png",
+        filename="table_6_inert_params.png",
         col_widths=[2.8, 6.5],
         fontsize=10,
     )
 
 
 # ---------------------------------------------------------------------------
-# Table 6: Categorical conditions (Section 7)
+# Table 7: Categorical conditions (Section 8)
 # ---------------------------------------------------------------------------
 def table_categorical_conditions() -> Path:
     headers = ["Condition", "Mean", "vs base", "Description"]
@@ -239,7 +262,7 @@ def table_categorical_conditions() -> Path:
     ]
     return render_table(
         headers, rows,
-        filename="table_6_categorical_conditions.png",
+        filename="table_7_categorical_conditions.png",
         col_widths=[3.6, 1.2, 1.4, 5.0],
         highlight_rows=[0],
         fontsize=10,
@@ -251,6 +274,7 @@ def main() -> int:
         table_base_metrics,
         table_main_4_factors,
         table_mp_pressure_3,
+        table_placement_kill_sharpness,
         table_transfer_kill_rate,
         table_inert_params,
         table_categorical_conditions,

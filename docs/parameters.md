@@ -35,7 +35,7 @@ CLI フラグは `--<field-name with hyphens>` で対応。JSON ではフィー�
 |---|---|---|---|
 | `num_teams` | int | 20 | ロビーチーム数（ALGS は 20 固定） |
 | `players_per_team` | int | 3 | 1 チームの人数 |
-| `max_matches` | int | 30 | 大会の打ち切り試合数（Match Point 制では届かないことが多い） |
+| `max_matches` | int | 30 | 大会の打ち切り試合数（Match Point 制では届かない） |
 | `match_point_threshold` | int | 50 | Match Point 点灯閾値 |
 
 ### チーム強度
@@ -157,6 +157,14 @@ team_kills   = multinomial(scored_kills - transferred_kills, probs)
 16th-17th:  0.25
 18th-20th:  0.20
 ```
+
+このタプルは固定だが、勾配の急峻さは `SimulationConfig.placement_kill_sharpness` (既定 `1.0`) で 1 次元スカラとして上書きできる。`match_sim.py:_apply_placement_kill_sharpness()` が対数空間で各エントリを幾何平均からの距離 × sharpness にスケールする:
+
+- `sharpness=1.0` (既定): 上記タプルそのまま (1 位:20 位 ≒ 12:1)
+- `sharpness=0.0`: 全順位均等 (上記の幾何平均 ≒ 0.58 で全 20 エントリ一定 → キル配分は `fight_skill` のみで決まる)
+- `sharpness=2.0`: 勾配が 2 倍シャープ (1 位:20 位 ≒ 144:1、上位独占世界)
+
+CLI フラグ: `--placement-kill-sharpness <value>`。等戦力ベース (`strength_sigma=0.05`) でスイープすると、`mean ending match` が 9.70 (sharpness=0) → 8.50 (sharpness=2) と Δ -1.21 試合動く一方、`scored kills` は 57.2〜57.4 でほぼ不動。順位構造への介入が「snowball 強度」を直接動かすため、キル供給量を保ったまま大会の長さを大きく変えられる。検証スイープ結果は `docs/sweep_equal_baseline.md` の「順位構造への介入」セクション参照。
 
 ### Seeded 出発点テーブル `STARTING_POINTS_SEEDED`
 

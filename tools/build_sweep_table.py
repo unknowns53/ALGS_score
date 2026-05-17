@@ -143,6 +143,30 @@ SWEEP_DEFINITIONS: dict[str, tuple[float, list[tuple[float, str, bool]]]] = {
         (0.045, "sweep_eq_neutral_death_lvl4.json", False),
         (0.06, "sweep_eq_neutral_death_lvl5.json", False),
     ]),
+
+    # --- placement structure intervention ---
+    # log-space sharpness around the geometric mean of PLACEMENT_KILL_FACTOR.
+    # 1.0 = current tuple (1st:20th ~ 12:1); 0.0 = flat (kills proportional to
+    # fight skill alone); 2.0 ~ 144:1 ratio. base=level3.
+    "placement_kill_sharpness": (1.0, [  # delta = 0.5
+        (0.00, "sweep_eq_placement_kill_sharpness_lvl1.json", False),
+        (0.50, "sweep_eq_placement_kill_sharpness_lvl2.json", False),
+        (1.00, "sweep_equal_base.json", True),
+        (1.50, "sweep_eq_placement_kill_sharpness_lvl4.json", False),
+        (2.00, "sweep_eq_placement_kill_sharpness_lvl5.json", False),
+    ]),
+
+    # --- telemetry-only verification ---
+    # revive_knock_mean is recorded into MatchResult but does NOT feed into
+    # allocate_kills() or scored_kills. We expect mean ending match to be
+    # invariant across the sweep — measuring it just confirms code reading.
+    "revive_knock_mean": (10.0, [  # delta = 3.0
+        (4.0, "sweep_eq_revive_knock_mean_lvl1.json", False),
+        (7.0, "sweep_eq_revive_knock_mean_lvl2.json", False),
+        (10.0, "sweep_equal_base.json", True),
+        (13.0, "sweep_eq_revive_knock_mean_lvl4.json", False),
+        (16.0, "sweep_eq_revive_knock_mean_lvl5.json", False),
+    ]),
 }
 
 # (section_id, title, [param_name]).
@@ -159,6 +183,12 @@ SECTIONS: list[tuple[str, str, list[str]]] = [
       "volatility_mean", "rank_beta", "kill_beta", "respawn_dispersion"]),
     ("no_effect", "参考資料 (2): ほぼ効かない検証 (記事では「動かない」の根拠に使う)",
      ["transfer_kill_rate", "neutral_death_rate"]),
+    ("placement_structure",
+     "記事採用候補 (3): 順位構造への介入 (PLACEMENT_KILL_FACTOR を外出し)",
+     ["placement_kill_sharpness"]),
+    ("telemetry_only",
+     "参考資料 (3): テレメトリのみ (スコア計算には渡らないので不動の予想)",
+     ["revive_knock_mean"]),
 ]
 
 # (display_label, filename, short_description)
@@ -198,8 +228,9 @@ def fmt(value, spec: str) -> str:
 
 
 def format_param_value(param: str, value: float) -> str:
-    # respawn_mean / respawn_dispersion: 1 decimal looks more natural for >1 ranges.
-    if param in ("respawn_mean", "respawn_dispersion"):
+    # respawn_mean / respawn_dispersion / revive_knock_mean: 1 decimal looks
+    # more natural for >1 ranges.
+    if param in ("respawn_mean", "respawn_dispersion", "revive_knock_mean"):
         return f"{value:.1f}"
     # mp_kill_penalty / neutral_death_rate need 3 decimals for the 0.025 /
     # 0.015 step values. transfer_kill_rate now uses 0.05-step (2 decimals).

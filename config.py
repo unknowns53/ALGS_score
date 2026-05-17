@@ -100,6 +100,12 @@ class SimulationConfig:
     revive_knock_mean: float = 10.0
     chaos_multiplier: float = 1.0
     mp_pressure_lost_kill_multiplier: float = 1.25
+    # Sharpness of the per-placement kill allocation gradient.
+    # 1.0 keeps PLACEMENT_KILL_FACTOR as-is (1st:20th ~ 12:1).
+    # 0.0 = uniform across placements (kills proportional to fight skill only).
+    # >1.0 = even steeper top-heavy distribution. Implemented by log-space
+    # scaling around the geometric mean of the base tuple.
+    placement_kill_sharpness: float = 1.0
 
     # Match Point pressure
     mp_pressure_enabled: bool = True

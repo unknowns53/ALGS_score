@@ -37,6 +37,23 @@ class MatchResult:
     total_knocks: int
 
 
+def _apply_placement_kill_sharpness(
+    base: tuple[float, ...], sharpness: float
+) -> np.ndarray:
+    """Reshape PLACEMENT_KILL_FACTOR by scaling its log-deviations from the mean.
+
+    sharpness=1.0 returns the base tuple unchanged. sharpness=0.0 collapses
+    every placement to the geometric mean (uniform allocation). sharpness>1.0
+    sharpens the top-heavy gradient even further.
+    """
+    arr = np.asarray(base, dtype=np.float64)
+    if sharpness == 1.0:
+        return arr
+    log_arr = np.log(arr)
+    mean_log = log_arr.mean()
+    return np.exp(mean_log + sharpness * (log_arr - mean_log))
+
+
 def _sample_negbin_mean_dispersion(
     mean: float, dispersion: float, rng: np.random.Generator
 ) -> int:
@@ -221,8 +238,11 @@ def allocate_kills(
     for rank, tid in enumerate(placements):
         placement_position[tid] = rank
 
+    factor_table = _apply_placement_kill_sharpness(
+        PLACEMENT_KILL_FACTOR, cfg.placement_kill_sharpness
+    )
     placement_factor = np.array(
-        [PLACEMENT_KILL_FACTOR[placement_position[tid]] for tid in team_ids]
+        [factor_table[placement_position[tid]] for tid in team_ids]
     )
     log_w_base = cfg.kill_beta * fight + np.log(placement_factor)
     log_w_steal = cfg.kill_beta * fight  # third-party kills: ignore placement

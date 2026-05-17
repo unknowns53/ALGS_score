@@ -7,8 +7,8 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from config import PLACEMENT_POINTS, SimulationConfig
-from match_sim import simulate_match
+from config import PLACEMENT_KILL_FACTOR, PLACEMENT_POINTS, SimulationConfig
+from match_sim import _apply_placement_kill_sharpness, simulate_match
 from teams import generate_teams, teams_to_arrays
 from tournament_sim import simulate_tournament
 
@@ -204,3 +204,34 @@ def test_8_revived_knocks_independent_of_kills():
     )
     # Revived knocks themselves should clearly differ
     assert rk_hi.mean() > rk_lo.mean() + 5
+
+
+def test_9_placement_sharpness_identity_at_one():
+    """sharpness=1.0 must return the base tuple verbatim (regression guard)."""
+    out = _apply_placement_kill_sharpness(PLACEMENT_KILL_FACTOR, 1.0)
+    assert np.allclose(out, np.asarray(PLACEMENT_KILL_FACTOR, dtype=np.float64))
+
+
+def test_10_placement_sharpness_zero_is_flat():
+    """sharpness=0.0 collapses all placements to the geometric mean."""
+    out = _apply_placement_kill_sharpness(PLACEMENT_KILL_FACTOR, 0.0)
+    # All entries equal -> max == min
+    assert np.allclose(out, out[0])
+    # And they equal the geometric mean of the base tuple
+    expected = np.exp(np.log(np.asarray(PLACEMENT_KILL_FACTOR)).mean())
+    assert abs(out[0] - expected) < 1e-9
+
+
+def test_11_placement_sharpness_monotone_1st_to_20th():
+    """Increasing sharpness widens the 1st-place / 20th-place ratio."""
+    ratios = []
+    for s in (0.5, 1.0, 1.5, 2.0):
+        arr = _apply_placement_kill_sharpness(PLACEMENT_KILL_FACTOR, s)
+        ratios.append(arr[0] / arr[-1])
+    # strictly increasing
+    for prev, cur in zip(ratios, ratios[1:]):
+        assert cur > prev, f"ratios not monotone: {ratios}"
+    # sanity: sharpness=0.5 gives a less extreme ratio than the base 12:1
+    assert ratios[0] < 12.0
+    # sharpness=2.0 gives a much larger ratio
+    assert ratios[-1] > 100.0
