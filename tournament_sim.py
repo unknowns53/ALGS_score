@@ -1,4 +1,12 @@
-"""Full-tournament simulation and batch driver."""
+"""Full-tournament simulation and batch driver.
+
+The Match Point logic lives in `formats.match_point.MatchPointFormat`; this
+module is a thin compatibility wrapper that converts FormatResult back to
+the historical TournamentResult so callers (cli.py, stats.py, tests) keep
+working without changes.
+
+For new format-comparison work, prefer `formats.runner.run_format_simulations`.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +17,10 @@ from dataclasses import dataclass
 import numpy as np
 
 from config import SimulationConfig
-from match_sim import MatchResult, simulate_match
-from teams import Team, generate_teams, teams_to_arrays
+from formats.base import FormatResult
+from formats.match_point import MatchPointFormat
+from match_sim import MatchResult, simulate_match  # re-exported for callers
+from teams import Team, generate_teams, teams_to_arrays  # re-exported
 
 
 @dataclass
@@ -31,60 +41,39 @@ class TournamentResult:
         return len(self.match_results)
 
 
+def _format_result_to_tournament_result(fr: FormatResult) -> TournamentResult:
+    """Translate the unified FormatResult into the legacy TournamentResult shape."""
+    extras = fr.extras
+    return TournamentResult(
+        ended=fr.ended,
+        ending_match=fr.ending_match,
+        champion_team_id=fr.champion_team_id,
+        champion_seed=fr.champion_seed,
+        teams=fr.teams,
+        cumulative_scores=fr.cumulative_scores,
+        match_results=fr.match_results,
+        first_match_point_match=extras.get("first_match_point_match"),
+        teams_reached_match_point=int(extras.get("teams_reached_match_point", 0)),
+        eligible_at_ending_match_start=int(
+            extras.get("eligible_at_ending_match_start", 0)
+        ),
+    )
+
+
+_DEFAULT_MP_FORMAT = MatchPointFormat()
+
+
 def simulate_tournament(
     cfg: SimulationConfig, rng: np.random.Generator
 ) -> TournamentResult:
-    teams = generate_teams(cfg, rng)
-    teams_arr = teams_to_arrays(teams)
+    """Run one ALGS Match Point tournament — historical entry point.
 
-    starting = np.asarray(cfg.starting_points(), dtype=int)
-    cumulative = starting.copy()
-
-    match_results: list[MatchResult] = []
-    first_mp_match: int | None = None
-    ended = False
-    champion_id: int | None = None
-    eligible_at_end: int = 0
-
-    for m in range(1, cfg.max_matches + 1):
-        eligible_before = cumulative >= cfg.match_point_threshold
-        n_eligible_before = int(eligible_before.sum())
-        if first_mp_match is None and n_eligible_before > 0:
-            first_mp_match = m
-
-        result = simulate_match(teams_arr, cumulative, m, cfg, rng)
-        match_results.append(result)
-        cumulative = cumulative + result.team_scores
-
-        winner = result.winner_team_id
-        if eligible_before[winner]:
-            ended = True
-            champion_id = winner
-            eligible_at_end = n_eligible_before
-            break
-
-    if not ended:
-        # tournament hit max_matches without an eligible winner; report cumulative leader
-        eligible_at_end = int((cumulative >= cfg.match_point_threshold).sum())
-        champion_id = int(np.argmax(cumulative))
-
-    teams_reached = int((cumulative >= cfg.match_point_threshold).sum())
-    champion_seed: int | None = None
-    if champion_id is not None:
-        champion_seed = int(teams[champion_id].seed)
-
-    return TournamentResult(
-        ended=ended,
-        ending_match=len(match_results),
-        champion_team_id=champion_id,
-        champion_seed=champion_seed,
-        teams=teams,
-        cumulative_scores=cumulative,
-        match_results=match_results,
-        first_match_point_match=first_mp_match,
-        teams_reached_match_point=teams_reached,
-        eligible_at_ending_match_start=eligible_at_end,
-    )
+    Behaviour-preserving wrapper around MatchPointFormat. New code that
+    wants other formats should call MatchPointFormat().simulate(cfg, rng)
+    directly (or use formats.runner.run_format_simulations).
+    """
+    fr = _DEFAULT_MP_FORMAT.simulate(cfg, rng)
+    return _format_result_to_tournament_result(fr)
 
 
 def _run_chunk(

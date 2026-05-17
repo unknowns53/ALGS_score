@@ -50,6 +50,11 @@ class SimulationConfig:
     max_matches: int = 30
     match_point_threshold: int = 50
 
+    # Team pool for multi-lobby formats (Swiss, RoundRobin, DoubleElim).
+    # Match Point and FixedMatches use num_teams; the 30-team formats read
+    # this field instead so the two configurations can coexist.
+    tournament_team_pool: int = 30
+
     # Starting points. Default "none" matches current ALGS Match Point Finals,
     # which start every team at 0. Use "seeded" only when the user explicitly
     # wants the legacy seed-bonus table from STARTING_POINTS_SEEDED.

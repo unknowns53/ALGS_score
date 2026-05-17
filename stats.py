@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from config import SimulationConfig
+from teams import composite_strength
 from tournament_sim import TournamentResult
 
 
@@ -70,7 +71,8 @@ class SummaryResult:
 
 
 def _composite_strength(team) -> float:
-    return team.placement_skill + 0.5 * team.win_conversion + 0.2 * team.fight_skill
+    """Deprecated alias retained for backward compatibility — use teams.composite_strength."""
+    return composite_strength(team)
 
 
 def summarize(results: list[TournamentResult], cfg: SimulationConfig) -> SummaryResult:

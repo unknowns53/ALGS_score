@@ -46,9 +46,23 @@ def _build_covariance(cfg: SimulationConfig) -> np.ndarray:
     return cov
 
 
-def generate_teams(cfg: SimulationConfig, rng: np.random.Generator) -> list[Team]:
-    """Sample 20 teams' latent strengths and assign seeds."""
-    n = cfg.num_teams
+def composite_strength(team: "Team") -> float:
+    """Single source of truth for the composite strength score used for seeding."""
+    return team.placement_skill + 0.5 * team.win_conversion + 0.2 * team.fight_skill
+
+
+def generate_teams(
+    cfg: SimulationConfig,
+    rng: np.random.Generator,
+    n_override: int | None = None,
+) -> list[Team]:
+    """Sample N teams' latent strengths and assign seeds.
+
+    Pass `n_override` to generate a pool that differs from cfg.num_teams,
+    e.g. 30 teams for Swiss / RoundRobin / DoubleElim formats while keeping
+    the per-match num_teams at the lobby size.
+    """
+    n = n_override if n_override is not None else cfg.num_teams
     cov = _build_covariance(cfg)
     mean = np.zeros(4)
     skills = rng.multivariate_normal(mean, cov, size=n)  # (n, 4)
