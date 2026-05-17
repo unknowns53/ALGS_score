@@ -124,13 +124,15 @@ def table_base_metrics() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Table 2: Main 4 factors (Section 2)
+# Table 2: Main 5 factors (Section 2)
 # ---------------------------------------------------------------------------
-def table_main_4_factors() -> Path:
+def table_main_5_factors() -> Path:
     headers = ["Parameter", "Range", "Mean shift", "Direction"]
     rows = [
         ["strength_sigma (戦力分散)",
          "0.05 → 0.45", "9.06 → 7.53 (Δ -1.53)", "格差拡大で短縮"],
+        ["placement_kill_sharpness (順位別キル偏り)",
+         "0.0 → 2.0", "9.70 → 8.50 (Δ -1.21)", "偏り強化で短縮"],
         ["lost_kill_rate (失われるキル)",
          "0.00 → 0.12", "8.83 → 9.32 (Δ +0.49)", "キル価値低下で長尺化"],
         ["respawn_mean (1試合あたりの平均リスポーン数)",
@@ -140,7 +142,7 @@ def table_main_4_factors() -> Path:
     ]
     return render_table(
         headers, rows,
-        filename="table_2_main_4_factors.png",
+        filename="table_2_main_5_factors.png",
         col_widths=[4.5, 1.6, 2.6, 3.0],
         bold_cols=[2],
         fontsize=10,
@@ -269,15 +271,41 @@ def table_categorical_conditions() -> Path:
     )
 
 
+# ---------------------------------------------------------------------------
+# Table 8: Region refit results (Section 8 — placeholder until next session)
+# ---------------------------------------------------------------------------
+def table_region_refit() -> Path:
+    headers = ["Region", "strength_sigma", "PKF", "lost_kill_rate",
+               "revive_knock_mean", "obs mean", "sim mean"]
+    # Values from tools/fit_region_presets.py run on 2026-05-17
+    # (docs/region_refit_proposal.md). Observed mean from
+    # docs/data_validation.md section 2-B (Y4-Y5 19-event survey).
+    rows = [
+        ["Americas", "0.35", "0.60", "0.040", "13.0", "7.50", "8.14"],
+        ["EMEA",     "0.27", "1.20", "0.120",  "7.0", "8.50", "8.61"],
+        ["APAC-N",   "0.35", "1.00", "0.040",  "9.0", "8.75", "8.39"],
+        ["APAC-S",   "0.27", "0.60", "0.040",  "7.0", "8.00", "8.65"],
+    ]
+    return render_table(
+        headers, rows,
+        filename="table_8_region_refit.png",
+        col_widths=[1.4, 1.9, 1.0, 1.7, 2.0, 1.3, 1.3],
+        bold_cols=[2],
+        fontsize=10,
+        title="地域別フィッティング結果 (grid search, 2026-05)",
+    )
+
+
 def main() -> int:
     builders = [
         table_base_metrics,
-        table_main_4_factors,
+        table_main_5_factors,
         table_mp_pressure_3,
         table_placement_kill_sharpness,
         table_transfer_kill_rate,
         table_inert_params,
         table_categorical_conditions,
+        table_region_refit,
     ]
     for build in builders:
         path = build()

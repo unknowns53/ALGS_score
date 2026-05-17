@@ -139,12 +139,15 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
     "americas": {
         # Calibrated against 4 historical Americas Pro League finals
         # (2024 S1/S2, 2025 S1/S2): mean 7.50 games.
-        # Kill credit rates raised after lobby-kill calibration (target
-        # ~52 kills/game). Per-game lost_kill_rate 0.025 -> 0.06.
-        # strength_sigma 0.48 -> 0.43 after PLACEMENT_KILL_FACTOR gradient
-        # was strengthened (1st-place teams now snowball faster, need
-        # more parity to keep mean around 7.50).
-        "strength_sigma": 0.43,
+        # Cycle 5 (2026-05): grid search against per-match standings
+        # (30 matches) re-set the 4 fittable knobs to
+        # strength_sigma=0.35, lost_kill_rate=0.04, revive_knock_mean=13.0,
+        # placement_kill_sharpness=0.60 (new key). The fit picks the
+        # shortest sim achievable in the grid (sim 8.14 vs obs 7.50) — the
+        # 30-match sample is dominated by 2025 S2 long lobbies, so the
+        # observed mean drifts above the docs/data_validation.md baseline
+        # but this is the best in-grid solution.
+        "strength_sigma": 0.35,
         "rank_beta": 1.00,
         "kill_beta": 0.85,
         "win_beta": 0.85,
@@ -158,9 +161,10 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "respawn_mean": 6.0,
         "respawn_dispersion": 4.0,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.06,
+        "lost_kill_rate": 0.04,
         "transfer_kill_rate": 0.05,
-        "revive_knock_mean": 9.0,
+        "revive_knock_mean": 13.0,
+        "placement_kill_sharpness": 0.60,
         "mp_pressure_enabled": True,
         "mp_win_penalty": 0.11,
         "mp_kill_penalty": 0.04,
@@ -171,11 +175,12 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # (2024 S1/S2, 2025 S1/S2): mean 8.50 games. EMEA is much more
         # contested than the "structured & low chaos" stereotype, so
         # parity is closer to APAC-N levels.
-        # Lobby-kill calibration: EMEA 2024 S2 measured 58.6 kills/game.
-        # lost_kill_rate 0.035 -> 0.07.
-        # strength_sigma 0.38 -> 0.30 after PLACEMENT_KILL_FACTOR gradient
-        # change made EMEA short-fall worse; tighten parity to recover.
-        "strength_sigma": 0.30,
+        # Cycle 5 (2026-05): grid search (34 matches) confirmed
+        # strength_sigma=0.27 (tighter than previous 0.30) but bumped
+        # lost_kill_rate 0.07 -> 0.12 (top of grid) and PKF to 1.20.
+        # Excellent fit (err 0.0006): sim 8.61 vs obs 8.50, p1 9.64 vs 9.44,
+        # p20 0.56 vs 0.56. EMEA is the cleanest fit of all four regions.
+        "strength_sigma": 0.27,
         "rank_beta": 0.95,
         "kill_beta": 0.80,
         "win_beta": 0.75,
@@ -189,9 +194,10 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "respawn_mean": 6.5,
         "respawn_dispersion": 3.5,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.07,
+        "lost_kill_rate": 0.12,
         "transfer_kill_rate": 0.05,
-        "revive_knock_mean": 10.0,
+        "revive_knock_mean": 7.0,
+        "placement_kill_sharpness": 1.20,
         "mp_pressure_enabled": True,
         "mp_win_penalty": 0.17,
         "mp_kill_penalty": 0.05,
@@ -200,14 +206,14 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
     "apac_n": {
         # Calibrated against 4 historical APAC North Pro League finals
         # (2024 S1/S2, 2025 S1/S2): mean 8.75 games.
-        # Lobby-kill calibration: APAC-N 2024 S2 was a defensive lobby
-        # (~42 kills/game median, 13-game outlier), 2025 S1 was 55.9.
-        # lost_kill_rate raised 0.04 -> 0.10 to capture defensive meta.
-        # Plus strength_sigma 0.30 -> 0.27 and win_beta 0.65 -> 0.55 to
-        # increase MP-eligible concentration (multiple teams reaching 50
-        # simultaneously), which is the structural driver behind the
-        # 13-game outlier.
-        "strength_sigma": 0.27,
+        # Cycle 5 (2026-05): grid search (35 matches) re-set
+        # strength_sigma 0.27 -> 0.35 (more parity than previously
+        # estimated — the 13-game outlier overstated parity in cycle 4),
+        # lost_kill_rate 0.10 -> 0.04, revive_knock_mean 12.0 -> 9.0,
+        # PKF=1.00. sim 8.39 vs obs 8.75 (err 0.012). The PKF=1.00 result
+        # is interesting: APAC-N's long tournaments are NOT driven by a
+        # flatter kill distribution but by tighter parity (strength_sigma).
+        "strength_sigma": 0.35,
         "rank_beta": 0.85,
         "kill_beta": 0.75,
         "win_beta": 0.55,
@@ -221,9 +227,10 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "respawn_mean": 7.0,
         "respawn_dispersion": 3.0,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.10,
+        "lost_kill_rate": 0.04,
         "transfer_kill_rate": 0.06,
-        "revive_knock_mean": 12.0,
+        "revive_knock_mean": 9.0,
+        "placement_kill_sharpness": 1.00,
         "mp_pressure_enabled": True,
         "mp_win_penalty": 0.15,
         "mp_kill_penalty": 0.05,
@@ -233,9 +240,13 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # Calibrated against 4 historical APAC South Pro League finals
         # (2024 S1/S2, 2025 S1/S2): mean 8.00 games. Slightly shorter
         # than APAC-N, slightly longer than Americas.
-        # Lobby-kill calibration: lost_kill_rate 0.030 -> 0.065.
-        # strength_sigma 0.42 -> 0.38 after PLACEMENT_KILL_FACTOR change.
-        "strength_sigma": 0.38,
+        # Cycle 5 (2026-05): grid search (27 matches, 20 complete — the
+        # 2024 S1 Games 6-10 and 2024 S2 Game 7 standings are missing in
+        # Liquipedia coverage) suggests strength_sigma=0.27,
+        # lost_kill_rate=0.04, revive_knock_mean=7.0, PKF=0.60.
+        # sim 8.65 vs obs 8.00 (err 0.097). Smallest data set of the four
+        # regions — the fit drifts long, but in-grid the closest solution.
+        "strength_sigma": 0.27,
         "rank_beta": 0.95,
         "kill_beta": 0.72,
         "win_beta": 0.85,
@@ -249,9 +260,10 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "respawn_mean": 6.5,
         "respawn_dispersion": 3.5,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.065,
+        "lost_kill_rate": 0.04,
         "transfer_kill_rate": 0.06,
-        "revive_knock_mean": 11.0,
+        "revive_knock_mean": 7.0,
+        "placement_kill_sharpness": 0.60,
         "mp_pressure_enabled": True,
         "mp_win_penalty": 0.14,
         "mp_kill_penalty": 0.06,
