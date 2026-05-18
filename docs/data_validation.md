@@ -1,6 +1,6 @@
 # 既定値と実データの整合性チェック
 
-シミュレーションの既定値・ハードコード定数・地域プリセットが、ALGS の実際の大会結果とどれだけ合っているかを公開データ（主に Liquipedia）で検証した記録。Year 4 (2024) + Year 5 (2025) の地域別 Pro League Finals 16 大会 + Global Finals 3 大会の計 19 大会をサンプリング済み。
+シミュレーションの既定値・ハードコード定数・地域プリセットが、ALGS の実際の大会結果とどれだけ合っているかを公開データ（主に Liquipedia）で検証した記録。Year 4 (2024) + Year 5 (2025) の地域別 Pro League Finals 16 大会 + Global Finals 5 大会の計 21 大会をサンプリング済み。
 
 ## 1. 公式ルールとの完全一致が確認できた項目
 
@@ -13,13 +13,17 @@
 
 ## 2. Match Point Finals 終了試合数の実績データ
 
-### 2-A. Global Finals（3 大会）
+### 2-A. Global Finals（5 大会）
 
 | 大会 | 試合数 | 優勝 |
 |---|---|---|
-| Year 4 Championship (2024-25 Sapporo) | 9 | GoNext Esports |
+| 2024 Split 1 Playoffs (London) | 8 | REJECT WINNITY (86p) |
+| 2024 Split 2 Playoffs (Raleigh) | 10 | Spacestation Gaming (85p) |
+| Year 4 Championship (2024 Sapporo) | 9 | GoNext Esports |
 | 2025 Midseason Playoffs Finals | 9 | VK Gaming (96p) |
 | 2025 Championship Finals | 9 | GoNext Esports (68p) |
+
+Global Finals 5 大会平均: **9.00 試合**、範囲 **8 – 10**。
 
 ### 2-B. 地域別 Pro League Finals（16 大会）
 
@@ -36,7 +40,9 @@
 - 中央値: **8 試合**
 - 範囲: **6 〜 13 試合**
 
-Global Finals を含めた 19 大会平均: **8.21 試合**
+Global Finals を含めた 21 大会平均: **8.38 試合**（合計 176 試合 / 21 大会、範囲 6 – 13）。
+
+> 履歴: 2026-05-19 までこの欄は「19 大会平均 8.21 試合」と記載していたが、Global Finals の集計が Y4 Split 1/Split 2 Playoffs (London / Raleigh) の 2 大会を欠落していたうえ、19 大会で再集計しても (131 + 27) / 19 = 8.32 のはずで 8.21 自体が計算ミスだった。2026-05-19 に Global Finals を 5 大会に補完して 21 大会平均 8.38 に統一。
 
 ## 3. シミュレーション結果との比較
 
@@ -242,6 +248,8 @@ Champs Group Stage:
 ## 7. 引用ソース
 
 ### Global Finals
+- [Apex Legends Global Series: 2024 Split 1 Playoffs - Finals (Liquipedia)](https://liquipedia.net/apexlegends/Apex_Legends_Global_Series/2024/Split_1/Playoffs/Finals)
+- [Apex Legends Global Series: 2024 Split 2 Playoffs - Finals (Liquipedia)](https://liquipedia.net/apexlegends/Apex_Legends_Global_Series/2024/Split_2/Playoffs/Finals)
 - [Apex Legends Global Series: 2025 Championship - Finals (Liquipedia)](https://liquipedia.net/apexlegends/Apex_Legends_Global_Series/2025/Championship/Finals)
 - [Apex Legends Global Series: 2025 Midseason Playoffs - Finals (Liquipedia)](https://liquipedia.net/apexlegends/Apex_Legends_Global_Series/2025/Midseason_Playoffs/Finals)
 - [GoNext clinch victory in ALGS Championship Year 4 (Dexerto)](https://www.dexerto.com/apex-legends/how-to-watch-algs-championship-year-4-stream-schedule-and-results-3039736/)
