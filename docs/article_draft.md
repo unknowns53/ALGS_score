@@ -341,54 +341,18 @@ note 投稿時は各 PNG を個別アップロードして該当箇所に差し�
 
 ## 書き手用メモ
 
-以下は作業履歴。サイクル 9 で 4 パラメータ × 900 条件の本フィットが完走し、第 7 節の表・図・地域別解釈・第 8 節まとめを実値で確定させた。
+以下はサイクル 10 以降の作業履歴。記事は Part 1 (note 公開予定、等戦力ベース感度分析) と Part 2 (地域別フィッティング、独立公開) の 2 本立て構成に再編済。サイクル 12 までで第 2 回フィッティング編の方針 (ベイズ最適化 + 5 パラメータ化、Champs Group Stage 非投入、Global Finals を 5 番目 lobby に組み込み) を確定し、fit ハーネス改修まで実装済 (`tools/fit_region_presets.py --method bayesian`)。サイクル 9 以前の作業履歴は git log を参照。
 
-- 文字数: 約 9000 字 + 図版 9 枚 (note 中尺記事の上限近く)
+- 文字数: Part 1 (note 公開分) ~5500 字 + 図 1〜8、Part 2 (フィッティング編) ~6000-8000 字 + 図数枚 + 表で構成予定
 - 読者リテラシー: ALGS をある程度視聴している前提だが、Monte Carlo は知らない層も読めるよう「10000 通りの仮想大会を回す」レベルに噛み砕いた
-- 構成: 3 部構成 (第 1 部 = 謎の提示 / 第 1 節、第 2 部 = 等戦力ベースの感度分析 / 第 2〜6 節、第 3 部 = 地域別フィッティング / 第 7〜8 節)。リードの問い (APAC-N が長引きやすい理由) は、第 2 部で候補要因 (5 つ) まで示し、第 3 部の地域別フィッティングで「APAC-N は拮抗 (`strength_sigma=0.35`) が主因」と結論
+- 構成: 本ファイル `article_draft.md` は内部執筆用で第 1〜8 節を全て保持し、Part 2 の素材として使う。note 公開用 `article_draft_note.md` は第 1〜6 節 + 図 1〜8 のみに絞った Part 1 切り出し版 (著者側で編集中)。リードの問い (APAC-N が長引きやすい理由) は Part 1 で候補要因 5 つまで提示、Part 2 で地域別フィッティング結果として結論を出す
 - 数値の検算には `docs/sweep_equal_baseline.md`、過去大会データは `docs/data_validation.md`、地域別フィット結果は `docs/region_refit_proposal.md` を参照
-
-### 改訂サイクル 2 で対応した著者コメント
-- 「12 試合で終了するルールはない」→ リードの「最大 12 試合」を削除済 (著者編集)、第 1 節表の「12 試合フル開催」を「12 試合を超えて続く確率」に修正、まとめ節等の表現も整理
-- 「感度分析の補足がほしい」→ 第 1 節冒頭に 1 段落追加 (現在の第 2 節冒頭に相当)
-- 「過去の統計との比較がほしい」→ 第 1 節末尾に Y4/Y5 19 大会平均 8.21 試合との比較を追加 (現在の第 1 節 + 第 2 節末尾)
-- 「待ち時間の平均値ではなく、復活数の平均値では？」→ そのとおり。第 2 節 respawn_mean の説明を「1 試合あたりリスポーンするプレイヤー数の平均」に訂正し、メカニズム説明も「復活多 → 再撃破でキル供給増 → 50 点リーチ早まる」という素直な単線説明に書き直し (現在の第 3 節)
-- 「各パラメータの説明がないのでわからない」→ 「効かなかった」節 (現在の第 5 節、サイクル 7 時点では 7 個) に 1 行説明表を追加 (parameters.md からの引用)
-
-### 改訂サイクル 3 (PKF 追加・chaos 削除)
-- 「本質的でないパラメータがいくつかあるので、代わりに PLACEMENT_KILL_FACTOR の検討を」→ 当時の第 4 節から chaos_multiplier の段落を削除 (lost_kill_rate と同メカニズムで冗長)、新節「順位構造への介入 — placement_kill_sharpness」を新設 (サイクル 5 時点では第 5 節、サイクル 6 で第 3 節 PKF subsection に統合)。これに伴い PLACEMENT_KILL_FACTOR を `SimulationConfig.placement_kill_sharpness` として外出し (log 空間スケーリング、`sharpness=1.0` で既存タプルそのまま)
-- 「revive_knock_mean の検証も」→ コード読みでは `MatchResult.revived_knocks` 専用フィールドでスコアに無関与のはずだが、実測スイープも回した。本文には載せず `docs/sweep_equal_baseline.md` に表だけ追加 (本記事第 8 節まとめ第 3 階層に 1 項目追加で言及済み)
-
-### 改訂サイクル 4 (PKF メカニズム可視化と地域差解釈)
-- 「PKF を変えたときのキル分布ってどんな感じになりますか」→ 順位別キル数を直接測定 (`tools/inspect_pkf_kill_distribution.py`)、PKF subsection に図を追加 (現在は第 3 節の図 3)。sharpness=0 で完全フラット (1〜20 位とも ~2.87 キル/試合)、sharpness=2 で 1 位 ~16.4 / 20 位 ~0.25 と確認
-- 「そこまで極端に振らなくてもいいでしょう」→ sharpness=0〜2 のレンジ全体が「現実離れの極端」ではなく「現実にあり得る配分の幅」をカバーしているという解釈を採用
-
-### 改訂サイクル 5 (3 部構成への全面リライト + 地域別フィッティング章新設)
-- 「地域パラメータ再フィッティング・記事のリライトをしましょう」→ 記事全体を 3 部構成 (謎の提示 → 等戦力ベース感度分析 → 地域別フィット) に再編。新第 1 節「ALGS Match Point Finals の地域差 — 実測 19 大会の輪郭」を新設してリードの問いを正面から提示、地域別 grid search 結果を提示する「4 地域の再校正」節を新設 (サイクル 5 時点では第 8 節、サイクル 6 で第 7 節)。旧第 4 節「中立死率」は削除し、`lost_kill_rate` の段落内に「同家族の同方向レバー」として 1 行統合
-- 自動 grid search ハーネス `tools/fit_region_presets.py` 新設 (4 パラメータ × 500 条件/地域、2000 sims/条件)。観測値 `data/region_kill_breakdown.csv` は subagent 並列で Liquipedia から 126 試合分 (Americas 30、EMEA 34、APAC-N 35、APAC-S 27) を収集
-- 当時の暫定 fit で得た 4 地域ベスト解 (`docs/region_refit_proposal.md`) を本文に反映したが、現在は元データ差し替え前提のため、第 7 節の表・図・地域結論は TBD に戻した
-
-### 改訂サイクル 8〜9 (フィッティング対象の整合化 + 4 パラメータ本フィット)
-- 「フィッティングに用いる変数がおかしい (5 要因の整理と齟齬)」→ サイクル 5〜7 の fit は `strength_sigma` / `lost_kill_rate` / `placement_kill_sharpness` / `revive_knock_mean` の 4 つを動かしていたが、`revive_knock_mean` は `MatchResult.revived_knocks` 専用フィールドでスコアに無関与、なのに動かしていたのは齟齬だった。修正方針として、第 2 部で「効く」と判明した 5 要因のうち `mp_win_penalty` は Apex のゲーム制度として全地域共通と扱って固定、残り 4 つ (`strength_sigma`、`PKF`、`lost_kill_rate`、`respawn_mean`) を fit 対象にした
-- サイクル 8 一次案 (3 パラメータ、`respawn_mean` を「全地域共通」として固定) → 観測の `kills_per_match` が地域別に 50〜62 と幅広く動いている事実に反するので却下。サイクル 9 で `respawn_mean` を fit 対象に戻し、4 パラメータ × 900 条件 × 2000 sims/条件で本フィットを実施
-- 観測との誤差は 4 成分 (mean_end / p1_kills / p20_kills / kills_per_match) の正規化二乗誤差。`kills_per_match` を加えることで `lost_kill_rate` と `respawn_mean` の trade-off を断ち切った
-- サイクル 9 ベスト解 (`docs/region_refit_proposal.md` 全文に上位 3 候補も含む):
-  - americas: ss=0.35, lkr=0.04, PKF=0.60, rm=10.0 (err=0.082、PKF/rm が grid 端に張り付き、1 位キル数 sim 6.86 vs obs 9.03 で再現不十分)
-  - emea: ss=0.27, lkr=0.10, PKF=1.20, rm=6.0 (err=0.003、4 成分とも観測にフィット)
-  - apac_n: ss=0.35, lkr=0.04, PKF=1.00, rm=6.0 (err=0.015、概ね整合)
-  - apac_s: ss=0.35, lkr=0.04, PKF=0.60, rm=10.0 (err=0.116、Americas と同様 grid 境界 + 1 位キル数 sim 6.73 vs obs 8.44 で再現不十分)
-- `config.py:REGION_PROFILES` の 4 地域に新ベスト解を反映、`pytest tests/` 29 件全パスを確認、`tools/render_article_tables.py:table_8_region_refit` を respawn_mean 列入りに差し替えて図 9 を再生成
-- 本文側更新: 第 7 節を「3 観測ターゲット → 4 観測ターゲット (kills_per_match 追加)」「TBD プレースホルダ → 実フィット結果 + 地域別解釈」に書き直し、リードと第 1 節の「データ差し替え予定」表現を「実データに当てはめる」に整理、第 8 節まとめの「APAC-N 主因はデータ差し替え後に判断」を「APAC-N の長期化は拮抗 (`strength_sigma=0.35`) が主因」と結論に置換
-
-### 改訂サイクル 7 (transfer_kill_rate の格下げ + 字数削減 + 用語整理)
-- 「漁夫率は PKF と独立な事象を見ていないのでは」→ 指摘そのとおり。`match_sim.py:241-272` `allocate_kills()` を読むと `transfer_kill_rate` は scored_kills のうち steal 経路 (= `log_w_steal = cfg.kill_beta * fight`、`placement_factor` を持たない) に流す比率なので、漁夫率を上げる = PKF が乗らない経路にキルを逃がす = 実効 PKF を下げる係数として動く (test_rules.py:135 のコメント「transfer_kill_rate=1 every scored kill goes through the steal distribution, which ignores placement_kill_factor」も同じ事実を述べている)。よって本記事リライト後は第 5 節「効かなかった」の独立項目から外し、第 3 節 PKF subsection 末尾の補足として 1 段落に格下げ。第 5 節タイトル「8 個」→「7 個」、表から transfer_kill_rate 行と「小発見: 漁夫率」段落 + 図 9 を削除。第 7 節以降の図番号も繰り上げ (旧図 10 → 図 9)
-- 字数削減: 第 3 節 strength_sigma の「下に凸」段落を表 + 1 文に圧縮、第 3 節 PKF の「16.4 キル/試合」段落を 1 文に圧縮、第 4 節「振り幅としては決して小さくない」段落削除。本文約 8500 → 7800 字
-- 「第 7 節『4 地域の再校正』はリポジトリを注視した人にしか流れがわからない」→ 本文側の「校正/再校正」を一般読者向けの語彙に統一: 節タイトル「4 地域の再校正」→「4 地域の値を実データに当てはめる」、subsection「校正対象の 4 パラメータ」→「フィッティング対象の 4 パラメータ」、表ヘッダ「校正後 X」→「推定値 X」、図 9 caption「再校正結果」→「フィッティング結果」、本文「校正後の数値」→「フィッティングで得られた値」、リード末尾「再校正する」→「当てはめる」。書き手用メモ内の改訂サイクル 5 にある「4 地域の再校正」節 は当時のタイトルなのでそのまま (歴史記述)
 
 ### 改訂サイクル 12 (第 2 回フィッティング方針の修正: Champs 投入を中止 + mp_win_penalty を fit 変数に追加) — 2026-05-19
 - サイクル 11 で「精度向上 2 本柱」として掲げた **Champs Group Stage 投入は中止**。理由 (著者判断): (a) Group Stage は地域混合 lobby (4 地域上位が 1 グループに同居) のため `strength_sigma` の意味が地域 fit と乖離する、(b) Group Stage は固定 6 試合・Match Point ルール非適用で、ロビー内の戦略圧力 (MP 圏内チームの順位狙い vs キル稼ぎの trade-off) が Pro League Finals と質的に異なる。サンプル数欲しさに混ぜると fit がノイズに引っ張られて逆効果のリスクが大きいと判断
 - 代わりに **`mp_win_penalty` を 5 番目の fit 変数として追加** (現状 4 → 5 パラメータ)。`tools/fit_region_presets.py` 冒頭コメント (lines 28-30) では「per-region MP-eligible win-rate 観測が必要」として除外していたが、ベイズ最適化文脈では mean_end (1 大会あたり試合数) への影響経由で fit 可能。MP 圏内チームの勝利抑制が強いほど大会が長引く方向にレバーが効くので、4 観測成分 (mean_end / p1 / p20 / kills_per_match) のうち mean_end と非自明に結合する。grid search で 5 次元化すると探索空間が爆発するため、これはベイズ最適化への切り替えと不可分のセット改訂
 - 影響: 精度向上の主軸は「ベイズ最適化 + 5 パラメータ化 (mp_win_penalty 追加)」の 1 本柱に再編。Champs データ収集タスクは宿題から外す。Global Finals 5 番目 lobby 化 (サイクル 11 で決定) は方針継続。`article_draft_note.md` 第 6 節末尾の予告にある「サンプル拡張 (Champs Group Stage の per-match データ ~216 試合分を投入)」言及は著者側で削除予定 (note 公開直前に同期)
+- 実装: 同日中に `tools/fit_region_presets.py` を改修し `--method bayesian` で 5 次元 (`SEARCH_SPACE_BAYES`: strength_sigma [0.10, 0.70] / lost_kill_rate [0.02, 0.20] / placement_kill_sharpness [0.4, 2.0] / respawn_mean [1.0, 12.0] / mp_win_penalty [0.0, 0.50]) のベイズ最適化が動く状態に。CLI に `--method {grid,bayesian}`、`--bayes-n-calls` (full 150 / dry 25)、`--bayes-n-initial` (full 15 / dry 8) を追加。grid mode は後方互換のため `grid_search_region` をそのまま残して regression OK。Bayesian 2 region 25 calls smoke test で 5 次元全部が動くこと + 改善ログが出ることを確認、`pytest tests/` 29 件全パス。Commit: `998bf9a Add Bayesian fit harness with 5-param search space`
 
 ### 改訂サイクル 11 (記事を 2 本に分割 + フィッティング編の方針確定) — 2026-05-19
 - 「note の中尺記事としては長すぎるので、フィッティングは第 2 回に分けたい」(著者方針) → 記事を 2 本に分割。第 1 回 = 第 1〜6 節 + 図 1〜8 (等戦力ベース感度分析で「効く 5 要因」まで)、第 2 回 = 第 7〜8 節相当 + 精度向上の新章 (地域別フィッティング編) として独立化
@@ -406,19 +370,11 @@ note 投稿時は各 PNG を個別アップロードして該当箇所に差し�
 - 反映先: `docs/data_validation.md` (セクション 2-A の表に 2 行追加 + 平均値 8.38 / 引用 URL 2 件追加)、本記事 `docs/article_draft.md` (第 1 節節タイトル・表・本文を「19 大会 → 21 大会」「3 大会 → 5 大会」「8.21 → 8.38」「Global Finals 範囲 9〜9 → 8〜10」に修正、第 2 節末尾の 19 大会平均比較と第 7 節 subsection タイトルも 21 大会へ)、`docs/article_draft_note.md` (note 公開用も同期)
 - 第 7 節以降の地域別フィッティング結果には影響なし: Global Finals は fit 対象外 (4 地域別の grid search ターゲットにしか使っていない) なので、`config.py:REGION_PROFILES` の更新も不要
 
-### 改訂サイクル 6 (PKF 統合 + 節構成整理)
-- 「placement_kill_sharpness を独立節 (第 5 節) として扱うのは『主要 5 要因』の整理と齟齬がある、第 3 節 subsection に統合した方がよい」→ サイクル 3 で新設した独立節を第 3 節「主要 5 要因」の subsection (Δ 大きさ順で strength_sigma の直後) に統合。節番号を繰り上げ (旧第 6 節 → 第 5 節、旧第 7 節 → 第 6 節、旧第 8 節 → 第 7 節、旧第 9 節 → 第 8 節)。図番号も再付番 (PKF 図 2 枚を第 3 節へ繰り上げたぶん、lost_kill_rate〜mp_kill_penalty が +2 シフト)
-- サイクル 6 内の APAC-N 主因切り分け再整理 — 当時は PKF 単独差分に絞ったが、現在は元データ差し替え前提のため、APAC-N 主因の断定は削除済み
-- 「リスポーン数が多いほうが大会は短くなる」が直感に反するという表現は撤回 — キル機会増 → 早く 50 点という素直な因果なので、第 3 節 respawn_mean subsection をその方向に書き直し
-- 第 7 節「フィッティング手順」内の sim 数表記を 10000 → 2000 に訂正 (本実行値、注記として 10000 を本来運用とした)
-- 「著者が Liquipedia から手動抽出」の主体記述を削除 (本文では主体を出さない方針)
-
 ### 次回セッション以降の宿題 (第 2 回フィッティング編に向けて)
-1. **fit ハーネスをベイズ最適化 + 5 パラメータ化に切り替え**: `tools/fit_region_presets.py` を scikit-optimize の `gp_minimize` ベースに改修。fit 変数を現行 4 (`strength_sigma`, `lost_kill_rate`, `placement_kill_sharpness`, `respawn_mean`) に **`mp_win_penalty` を追加して 5 パラメータ化**。観測ベクトル (4 成分 or 拡張版) の正規化二乗誤差を目的関数に。各地域 100〜200 回 evaluation で grid search 900 通りより精度・速度ともに有利になる想定。grid 端張り付き問題 (Americas/APAC-S の PKF=0.60、respawn_mean=10.0) の根治が一義的な狙い。冒頭コメント (lines 18-31) の「fit 対象 4 of 5 main factors」記述と `mp_win_penalty` 除外理由を、ベイズ opt + mean_end 経由 fit に書き換える必要あり
-2. **Global Finals を 5 番目の lobby として組み込み**: `region_kill_breakdown.csv` に Global Finals 5 大会分を追加し、fit ハーネスを 5 lobby 並列対応に拡張。`strength_sigma` の意味の違い (地域内拮抗度 vs Global 内拮抗度 = 各地域上位チーム同士の実力差) はコード側で `interpretation` メタ情報として残し、本文でも区別記載。5 lobby 同時 fit と「先に Global で共通パラメータ → 後で地域別 fit」の 2 段階 fit、どちらが安定するかは作業時に比較検討
-3. **APAC-S 欠損 7 試合の補完**: 2024 S1 Games 6-10 と 2024 S2 Game 7 を Apex Tracker や ALGS Stats から補完。地域別キル分布の精度に直接効く (Champs 投入を中止した分、地域単位 n を最大化する観点でも優先度が上がった)
-4. **観測ターゲットの再設計検討**: 4 成分 (mean_end / p1 / p20 / kills_per_match) に加えて、p2-p10 帯の平均キル数や終了試合数の std を加えるか検討。grid 端で「mean を取って 1 位キル数を諦める」trade-off を緩和する狙い。`mp_win_penalty` を 5 番目の変数に入れる場合、mean_end への結合だけで識別できるか (over-determined にならないか) もここで検証
-5. **PR 提出**: 第 1 回 (note 公開分) → 先行公開。第 2 回はフィッティング作業完了後に別途
+1. **Global Finals を 5 番目の lobby として組み込み**: `region_kill_breakdown.csv` に Global Finals 5 大会分を追加し、fit ハーネスを 5 lobby 並列対応に拡張。`strength_sigma` の意味の違い (地域内拮抗度 vs Global 内拮抗度 = 各地域上位チーム同士の実力差) はコード側で `interpretation` メタ情報として残し、本文でも区別記載。5 lobby 同時 fit と「先に Global で共通パラメータ → 後で地域別 fit」の 2 段階 fit、どちらが安定するかは作業時に比較検討
+2. **APAC-S 欠損 7 試合の補完**: 2024 S1 Games 6-10 と 2024 S2 Game 7 を Apex Tracker や ALGS Stats から補完。地域別キル分布の精度に直接効く (Champs 投入を中止した分、地域単位 n を最大化する観点でも優先度が上がった)
+3. **観測ターゲットの再設計検討**: 4 成分 (mean_end / p1 / p20 / kills_per_match) に加えて、p2-p10 帯の平均キル数や終了試合数の std を加えるか検討。grid 端で「mean を取って 1 位キル数を諦める」trade-off を緩和する狙い。`mp_win_penalty` を 5 番目の変数に入れる場合、mean_end への結合だけで識別できるか (over-determined にならないか) もここで検証
+4. **PR 提出**: 第 1 回 (note 公開分) → 先行公開。第 2 回はフィッティング作業完了後に別途
 
 ### 著者側で確認したい事項
 - リード「YukaF (現：Zeta Divison 所属)」→ Division のタイポか? "Zeta Division" が正
