@@ -26,6 +26,10 @@ env/
 .DS_Store
 Thumbs.db
 
+# Liquipedia / external HTML fetches (transient data-checking artifacts)
+algs_*.html
+_ssg_*.html
+
 # Simulation outputs (ignore everything under out/ by default)
 out/*
 # Track article assets: rendered tables and the distribution plots

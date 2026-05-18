@@ -1,28 +1,76 @@
-"""Grid search harness for re-fitting ALGS region presets.
+"""Region-preset fitting harness (grid search + Bayesian optimization).
 
-Calibrates four high-leverage parameters per region — strength_sigma,
-lost_kill_rate, revive_knock_mean, placement_kill_sharpness — to three
-observed targets:
+Calibrates region-variable parameters per region against four observed
+targets:
 
     1. mean ending match (from docs/data_validation.md section 2-B,
        hardcoded below since the document is hand-maintained markdown)
     2. mean kills of teams that placed 1st in a match
     3. mean kills of teams that placed 20th in a match
+    4. mean scored kills per match (sum across 20 placements)
 
 For each candidate parameter combination the harness runs `--sims`
-tournaments and measures the same three quantities, then ranks
+tournaments and measures the same four quantities, then ranks
 combinations by a normalized squared error against the observed vector.
 The top proposal per region is written to a markdown table; it is up to
 a human to copy the values into config.REGION_PROFILES.
 
+Two search methods (cycle 12):
+
+- `--method grid` (legacy, default): a 4-parameter Cartesian grid
+  (strength_sigma, lost_kill_rate, placement_kill_sharpness,
+  respawn_mean) over 6 x 5 x 6 x 5 = 900 combinations per region. The
+  default grid is left as it was in cycles 8-11 so older proposals can
+  still be reproduced bit-for-bit.
+
+- `--method bayesian` (cycle 12 onward): a 5-parameter Gaussian-process
+  Bayesian search via `skopt.gp_minimize` over continuous ranges. Adds
+  `mp_win_penalty` as the 5th fit variable (see note below) and removes
+  the grid-resolution constraint that pinned cycle-8/9/11 best solutions
+  for Americas and APAC-S at the grid edges (PKF=0.60, respawn_mean=10.0).
+  Typical budget: 150 evaluations per region (vs 900 for grid).
+
+Why 5 of the article's main-five factors are fit under bayesian (cycle 12):
+
+- strength_sigma, lost_kill_rate, placement_kill_sharpness, respawn_mean
+  carry over from grid (see cycle 8/9 rationale: respawn_mean drives the
+  ~10-kills-per-match regional variance in observed scored_kills totals;
+  Americas 61.9 / EMEA 56.5 / APAC-N 55.4 / APAC-S 50.5).
+- mp_win_penalty: previously excluded because direct estimation requires
+  per-region MP-eligible-team win-rate observations, which the data set
+  does not provide. Under Bayesian optimization mp_win_penalty is still
+  identified — indirectly, via its non-trivial coupling to `mean_end` (a
+  stronger penalty restrains MP-eligible teams from closing out, which
+  lengthens the tournament). Adding a 5th dimension under grid would
+  explode the search space; under gp_minimize the cost is linear-ish in
+  n_calls, so the dimension lift is essentially free.
+- revive_knock_mean stays excluded for the same reason as cycle 8:
+  stored on MatchResult.revived_knocks but never reaches scored_kills
+  (see match_sim.allocate_kills), so it cannot move any target.
+
+Champs Group Stage data (originally floated in cycle 11 as a sample-size
+booster) was rejected in cycle 12: the Group Stage is a region-mixed
+lobby playing fixed-length (non-Match-Point) matches, so its strategic
+pressure differs qualitatively from the regional Pro League Finals being
+fit here — merging it would distort the very quantities being estimated.
+
 The script is intentionally non-destructive: it never edits config.py.
 
 Usage:
+    # Legacy grid search (cycle 8-11 reproduction):
     python tools/fit_region_presets.py --dry-run
     python tools/fit_region_presets.py \\
         --observations data/region_kill_breakdown.csv \\
         --regions americas,emea,apac_n,apac_s \\
         --sims 2000 --workers 0 \\
+        --output-md docs/region_refit_proposal.md
+
+    # Bayesian optimization (cycle 12 onward, 5 parameters):
+    python tools/fit_region_presets.py --method bayesian --dry-run
+    python tools/fit_region_presets.py --method bayesian \\
+        --observations data/region_kill_breakdown.csv \\
+        --regions americas,emea,apac_n,apac_s \\
+        --sims 2000 --bayes-n-calls 150 --bayes-n-initial 15 \\
         --output-md docs/region_refit_proposal.md
 """
 
@@ -74,20 +122,41 @@ OBSERVED_MEAN_END_MATCH: dict[str, float] = {
 }
 
 # Default grid (full run).
+# Cycle 9: added respawn_mean (cycle 8 had dropped it as "all-region
+# common" but the observed total-kills variance per region demanded it
+# back). Also extended strength_sigma upper bound to 0.60 and PKF upper
+# bound to 1.8 because cycle 8 best solutions for Americas / APAC-S
+# were pinned at the grid boundary. Grid size: 6 x 5 x 6 x 5 = 900
+# conditions per region.
 GRID_FULL: dict[str, list[float]] = {
-    "strength_sigma": [0.20, 0.27, 0.35, 0.43, 0.50],
+    "strength_sigma": [0.20, 0.27, 0.35, 0.43, 0.50, 0.60],
     "lost_kill_rate": [0.04, 0.06, 0.08, 0.10, 0.12],
-    "revive_knock_mean": [7.0, 9.0, 11.0, 13.0],
-    "placement_kill_sharpness": [0.6, 0.8, 1.0, 1.2, 1.5],
+    "placement_kill_sharpness": [0.6, 0.8, 1.0, 1.2, 1.5, 1.8],
+    "respawn_mean": [2.0, 4.0, 6.0, 8.0, 10.0],
 }
 
 # Reduced grid used by --dry-run so the harness can be smoke-tested in
 # under a minute, e.g. while iterating on the script itself.
 GRID_DRY: dict[str, list[float]] = {
-    "strength_sigma": [0.27, 0.43],
+    "strength_sigma": [0.27, 0.50],
     "lost_kill_rate": [0.06, 0.10],
-    "revive_knock_mean": [9.0, 11.0],
-    "placement_kill_sharpness": [0.8, 1.2],
+    "placement_kill_sharpness": [0.8, 1.5],
+    "respawn_mean": [4.0, 8.0],
+}
+
+# Cycle 12: continuous search space for --method bayesian. 5 dimensions
+# (adds mp_win_penalty over the 4-dim grid). Ranges are deliberately
+# wider than the cycle-8/9/11 grid endpoints so previously edge-pinned
+# best solutions (Americas / APAC-S at PKF=0.60, respawn_mean=10.0) can
+# escape the boundary. The mp_win_penalty range [0.0, 0.50] comfortably
+# contains the current REGION_PROFILES values (0.11-0.17) and the
+# SimulationConfig default (0.10).
+SEARCH_SPACE_BAYES: dict[str, tuple[float, float]] = {
+    "strength_sigma": (0.10, 0.70),
+    "lost_kill_rate": (0.02, 0.20),
+    "placement_kill_sharpness": (0.4, 2.0),
+    "respawn_mean": (1.0, 12.0),
+    "mp_win_penalty": (0.0, 0.50),
 }
 
 
@@ -201,15 +270,21 @@ def _normalized_squared_error(
     sim: tuple[float, float, float, float],
     obs: dict[str, float],
 ) -> float:
-    """Normalize each component by its observed magnitude before squaring."""
-    sim_mean, sim_p1, sim_p20, _sim_total = sim
+    """Normalize each component by its observed magnitude before squaring.
+
+    Cycle 8: added the 4th component (kills_per_match). Without it the
+    fit only constrains 2 endpoints of the placement distribution (p1
+    and p20), leaving lost_kill_rate and respawn_mean (both drive the
+    per-match kill supply) un-anchored in their trade-off subspace.
+    """
+    sim_mean, sim_p1, sim_p20, sim_total = sim
     err = 0.0
-    # mean ending match: divide by observed value
     err += ((sim_mean - obs["mean_end_match"]) / max(obs["mean_end_match"], 1e-6)) ** 2
     err += ((sim_p1 - obs["p1_kills"]) / max(obs["p1_kills"], 1e-6)) ** 2
     # p20 can be ~0; floor at 0.5 so a single-kill difference is not infinite.
     p20_scale = max(obs["p20_kills"], 0.5)
     err += ((sim_p20 - obs["p20_kills"]) / p20_scale) ** 2
+    err += ((sim_total - obs["kills_per_match"]) / max(obs["kills_per_match"], 1e-6)) ** 2
     return err
 
 
@@ -237,6 +312,35 @@ def grid_search_region(
 
     results: list[tuple[dict, tuple[float, float, float, float]]] = []
     t0 = time.perf_counter()
+    # 5% progress steps so long fits surface ETA / best_err frequently.
+    progress_step = max(1, total // 20)
+    best_err_so_far = float("inf")
+    best_ov_so_far: dict | None = None
+
+    def _report_progress(i: int) -> None:
+        elapsed = time.perf_counter() - t0
+        rate = i / max(elapsed, 1e-3)
+        eta = (total - i) / max(rate, 1e-6)
+        if best_ov_so_far is not None:
+            best_str = ", ".join(
+                f"{k}={_fmt_param(k, best_ov_so_far[k])}" for k in keys
+            )
+        else:
+            best_str = "—"
+        print(
+            f"    [{region}] {i}/{total} ({100*i/total:5.1f}%, "
+            f"elapsed {elapsed:5.0f}s, ETA {eta:5.0f}s) "
+            f"best_err={best_err_so_far:.4f} ({best_str})",
+            flush=True,
+        )
+
+    def _update_best(ov: dict, metrics: tuple[float, float, float, float]) -> None:
+        nonlocal best_err_so_far, best_ov_so_far
+        cand_err = _normalized_squared_error(metrics, observed)
+        if cand_err < best_err_so_far:
+            best_err_so_far = cand_err
+            best_ov_so_far = ov
+
     if workers and workers > 1:
         ctx = mp.get_context("spawn")
         with ctx.Pool(processes=workers) as pool:
@@ -244,16 +348,16 @@ def grid_search_region(
                 pool.imap_unordered(_worker_eval, args_list), 1
             ):
                 results.append((ov, metrics))
-                if i % max(1, total // 10) == 0 or i == total:
-                    elapsed = time.perf_counter() - t0
-                    print(f"    {i}/{total} ({elapsed:.1f}s)", flush=True)
+                _update_best(ov, metrics)
+                if i % progress_step == 0 or i == total:
+                    _report_progress(i)
     else:
         for i, args in enumerate(args_list, 1):
             ov, metrics = _worker_eval(args)
             results.append((ov, metrics))
-            if i % max(1, total // 10) == 0 or i == total:
-                elapsed = time.perf_counter() - t0
-                print(f"    {i}/{total} ({elapsed:.1f}s)", flush=True)
+            _update_best(ov, metrics)
+            if i % progress_step == 0 or i == total:
+                _report_progress(i)
 
     scored = [
         (ov, m, _normalized_squared_error(m, observed))
@@ -264,95 +368,237 @@ def grid_search_region(
 
 
 # ---------------------------------------------------------------------------
+# Bayesian search per region (cycle 12)
+# ---------------------------------------------------------------------------
+def bayesian_search_region(
+    region: str,
+    observed: dict[str, float],
+    space: dict[str, tuple[float, float]],
+    n_sims: int,
+    seed: int,
+    n_calls: int,
+    n_initial: int,
+) -> list[tuple[dict, tuple[float, float, float, float], float]]:
+    """Gaussian-process Bayesian fit via `skopt.gp_minimize`.
+
+    Returns [(overrides, metrics, err), ...] sorted by err ascending, in
+    the same shape that `grid_search_region` returns so downstream code
+    (top3 extraction, proposal table rendering) does not have to branch.
+
+    `space` maps parameter name -> (low, high). The objective evaluates
+    one configuration via `_measure_one_config` (n_sims tournaments) and
+    scores against the 4-component observed vector with
+    `_normalized_squared_error`. gp_minimize is sequential (each
+    evaluation depends on the GP fit from prior evaluations), so the
+    --workers flag is ignored in this code path.
+    """
+    # Local import: scikit-optimize is only needed for --method bayesian
+    # so users running the legacy grid mode don't have to install it.
+    try:
+        from skopt import gp_minimize
+        from skopt.space import Real
+    except ImportError as exc:  # pragma: no cover - install-time error
+        raise SystemExit(
+            "scikit-optimize is required for --method bayesian. "
+            "Install it with: pip install scikit-optimize"
+        ) from exc
+
+    base_cfg = apply_region_profile(SimulationConfig(), region)
+    keys = list(space.keys())
+    dimensions = [Real(low, high, name=k) for k, (low, high) in space.items()]
+
+    records: list[tuple[dict, tuple[float, float, float, float], float]] = []
+    print(
+        f"  [{region}] bayes: n_calls={n_calls} (initial={n_initial}) "
+        f"x {n_sims} sims/eval, {len(keys)} dims ...",
+        flush=True,
+    )
+    t0 = time.perf_counter()
+    # Log on improvement, and a periodic heartbeat so long fits visibly
+    # progress between improvements.
+    state = {"best_err": float("inf"), "best_ov": None, "next_log": 0}
+    heartbeat_step = max(1, n_calls // 10)
+
+    def objective(x: list[float]) -> float:
+        overrides = {k: float(v) for k, v in zip(keys, x)}
+        cfg = replace(base_cfg, **overrides)
+        metrics = _measure_one_config(cfg, n_sims, seed)
+        err = _normalized_squared_error(metrics, observed)
+        records.append((overrides, metrics, err))
+        i = len(records)
+        improved = err < state["best_err"]
+        if improved:
+            state["best_err"] = err
+            state["best_ov"] = overrides
+        if improved or i >= state["next_log"]:
+            state["next_log"] = i + heartbeat_step
+            elapsed = time.perf_counter() - t0
+            best_ov = state["best_ov"] or overrides
+            best_str = ", ".join(
+                f"{k}={_fmt_param(k, best_ov[k])}" for k in keys
+            )
+            tag = "★" if improved else " "
+            print(
+                f"    [{region}] {tag} eval {i}/{n_calls} "
+                f"(elapsed {elapsed:5.0f}s) "
+                f"best_err={state['best_err']:.4f} ({best_str})",
+                flush=True,
+            )
+        return err
+
+    gp_minimize(
+        objective,
+        dimensions,
+        n_calls=n_calls,
+        n_initial_points=n_initial,
+        random_state=seed,
+        verbose=False,
+    )
+
+    records.sort(key=lambda r: r[2])
+    return records
+
+
+# ---------------------------------------------------------------------------
 # Proposal-table writer
 # ---------------------------------------------------------------------------
+_PARAM_FORMAT: dict[str, str] = {
+    "strength_sigma": "{:.3f}",
+    "lost_kill_rate": "{:.3f}",
+    "placement_kill_sharpness": "{:.2f}",
+    "respawn_mean": "{:.1f}",
+    "mp_win_penalty": "{:.3f}",
+    # legacy keys, kept so we can still render older proposals if needed
+    "revive_knock_mean": "{:.1f}",
+}
+
+
+def _fmt_param(name: str, value: float) -> str:
+    return _PARAM_FORMAT.get(name, "{:.3f}").format(value)
+
+
 def render_proposal_md(
     proposals: dict[str, dict],
     out_path: Path,
-    grid: dict[str, list[float]],
+    search: dict[str, list[float]] | dict[str, tuple[float, float]],
     n_sims: int,
     dry_run: bool,
+    method: str = "grid",
+    bayes_meta: dict | None = None,
 ) -> None:
+    """Write the per-region proposal table.
+
+    `search` is the grid dict for method=grid (param -> list of values)
+    or the Bayesian space dict for method=bayesian (param -> (low, high)
+    tuple). `bayes_meta` carries {n_calls, n_initial} when method=bayesian
+    so the report can record the budget.
+    """
+    keys = list(search.keys())
+    title_suffix = "ベイズ最適化提案" if method == "bayesian" else "grid search 提案"
+    method_blurb = (
+        f"`gp_minimize` ベイズ最適化、n_calls={bayes_meta['n_calls']} "
+        f"(initial={bayes_meta['n_initial']}), {n_sims} sims/eval"
+        if method == "bayesian" and bayes_meta
+        else f"grid search, sims/condition={n_sims}"
+    )
     lines = [
-        "# 地域プリセット再校正 — grid search 提案",
+        f"# 地域プリセット再フィッティング — {title_suffix}",
         "",
-        f"自動生成 (`tools/fit_region_presets.py`). dry_run={dry_run}, "
-        f"sims/condition={n_sims}.",
+        f"自動生成 (`tools/fit_region_presets.py --method {method}`). "
+        f"dry_run={dry_run}, {method_blurb}.",
         "",
-        "## グリッド範囲",
-        "",
-        "| パラメータ | 候補値 |",
-        "|---|---|",
     ]
-    for k, vals in grid.items():
-        vs = ", ".join(str(v) for v in vals)
-        lines.append(f"| `{k}` | {vs} |")
+    if method == "bayesian":
+        lines.extend([
+            "## 探索範囲",
+            "",
+            "| パラメータ | 下限 | 上限 |",
+            "|---|---|---|",
+        ])
+        for k in keys:
+            low, high = search[k]
+            lines.append(f"| `{k}` | {_fmt_param(k, low)} | {_fmt_param(k, high)} |")
+    else:
+        lines.extend([
+            "## グリッド範囲",
+            "",
+            "| パラメータ | 候補値 |",
+            "|---|---|",
+        ])
+        for k in keys:
+            vs = ", ".join(str(v) for v in search[k])
+            lines.append(f"| `{k}` | {vs} |")
     lines.append("")
     lines.append("## ベスト解 (各地域)")
     lines.append("")
-    lines.append(
-        "| region | strength_sigma | lost_kill_rate | revive_knock_mean "
-        "| placement_kill_sharpness | obs mean_end | sim mean_end "
-        "| obs p1_kills | sim p1_kills | obs p20_kills | sim p20_kills "
-        "| n_obs_matches |"
-    )
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    header_cols = ["region"] + keys + [
+        "obs mean_end", "sim mean_end",
+        "obs p1_kills", "sim p1_kills",
+        "obs p20_kills", "sim p20_kills",
+        "obs total_kills", "sim total_kills",
+        "err", "n_obs_matches",
+    ]
+    lines.append("| " + " | ".join(header_cols) + " |")
+    lines.append("|" + "---|" * len(header_cols))
     for region in ("americas", "emea", "apac_n", "apac_s"):
         if region not in proposals:
-            lines.append(
-                f"| {region} | [no data] | | | | "
-                f"{OBSERVED_MEAN_END_MATCH.get(region, '-')} | "
-                f"— | — | — | — | — | 0 |"
+            placeholder = (
+                ["[no data]"] + [""] * len(keys)
+                + [f"{OBSERVED_MEAN_END_MATCH.get(region, '-')}"]
+                + ["—"] * 7 + ["0"]
             )
+            lines.append(f"| {region} | " + " | ".join(placeholder) + " |")
             continue
         p = proposals[region]
         ov = p["overrides"]
-        sim_m, sim_p1, sim_p20, _ = p["metrics"]
+        sim_m, sim_p1, sim_p20, sim_total = p["metrics"]
         obs = p["observed"]
-        lines.append(
-            f"| {region} "
-            f"| {ov['strength_sigma']:.3f} "
-            f"| {ov['lost_kill_rate']:.3f} "
-            f"| {ov['revive_knock_mean']:.1f} "
-            f"| {ov['placement_kill_sharpness']:.2f} "
-            f"| {obs['mean_end_match']:.2f} | {sim_m:.2f} "
-            f"| {obs['p1_kills']:.2f} | {sim_p1:.2f} "
-            f"| {obs['p20_kills']:.2f} | {sim_p20:.2f} "
-            f"| {p['n_obs_matches']} |"
-        )
+        row = [region]
+        for k in keys:
+            row.append(_fmt_param(k, ov[k]))
+        row += [
+            f"{obs['mean_end_match']:.2f}", f"{sim_m:.2f}",
+            f"{obs['p1_kills']:.2f}", f"{sim_p1:.2f}",
+            f"{obs['p20_kills']:.2f}", f"{sim_p20:.2f}",
+            f"{obs['kills_per_match']:.2f}", f"{sim_total:.2f}",
+            f"{p['err']:.4f}", str(p['n_obs_matches']),
+        ]
+        lines.append("| " + " | ".join(row) + " |")
     lines.append("")
-    lines.append("## 上位 3 候補 (各地域、観測との正規化二乗誤差)")
+    lines.append("## 上位 3 候補 (各地域、観測との正規化二乗誤差 — 4 成分)")
+    lines.append("")
+    lines.append(
+        "err = (Δmean_end/obs)² + (Δp1/obs_p1)² + (Δp20/max(obs_p20,0.5))² "
+        "+ (Δtotal/obs_total)². 各成分は観測値で割って正規化した二乗差。"
+    )
     lines.append("")
     for region in ("americas", "emea", "apac_n", "apac_s"):
         if region not in proposals:
             continue
         lines.append(f"### {region}")
         lines.append("")
-        lines.append(
-            "| rank | strength_sigma | lost_kill_rate | revive_knock_mean "
-            "| placement_kill_sharpness | sim mean_end | sim p1_kills "
-            "| sim p20_kills | err |"
-        )
-        lines.append("|---|---|---|---|---|---|---|---|---|")
+        top_cols = (["rank"] + keys
+                    + ["sim mean_end", "sim p1_kills", "sim p20_kills",
+                       "sim total_kills", "err"])
+        lines.append("| " + " | ".join(top_cols) + " |")
+        lines.append("|" + "---|" * len(top_cols))
         for rank, (ov, metrics, err) in enumerate(proposals[region]["top3"], 1):
-            sim_m, sim_p1, sim_p20, _ = metrics
-            lines.append(
-                f"| {rank} "
-                f"| {ov['strength_sigma']:.3f} "
-                f"| {ov['lost_kill_rate']:.3f} "
-                f"| {ov['revive_knock_mean']:.1f} "
-                f"| {ov['placement_kill_sharpness']:.2f} "
-                f"| {sim_m:.2f} | {sim_p1:.2f} | {sim_p20:.2f} "
-                f"| {err:.4f} |"
-            )
+            sim_m, sim_p1, sim_p20, sim_total = metrics
+            row = [str(rank)]
+            for k in keys:
+                row.append(_fmt_param(k, ov[k]))
+            row += [
+                f"{sim_m:.2f}", f"{sim_p1:.2f}", f"{sim_p20:.2f}",
+                f"{sim_total:.2f}", f"{err:.4f}",
+            ]
+            lines.append("| " + " | ".join(row) + " |")
         lines.append("")
     lines.append("## 採用手順 (人間判断)")
     lines.append("")
     lines.append(
         "ベスト解 (上の表) を `config.py:REGION_PROFILES` に反映する際は、"
-        "各地域ブロックの該当 4 キーを書き換えた上で `pytest tests/` を実行し、"
-        "regression テストが通ることを確認する。`placement_kill_sharpness` は "
-        "現状 REGION_PROFILES に未含有なので、新規キーとして追加する形になる。"
+        f"各地域ブロックの該当 {len(keys)} キー ({', '.join('`' + k + '`' for k in keys)}) "
+        "を書き換えた上で `pytest tests/` を実行し、regression テストが通ることを確認する。"
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -382,7 +628,23 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     p.add_argument(
         "--dry-run", action="store_true",
-        help="use a 2x2x2x2 grid and small --sims for a smoke test."
+        help="use a 2x2x2x2 grid (or reduced bayes budget) and small --sims "
+             "for a smoke test."
+    )
+    p.add_argument(
+        "--method", choices=["grid", "bayesian"], default="grid",
+        help="search method: grid (4-dim, 900 conditions, legacy) or "
+             "bayesian (5-dim incl. mp_win_penalty, skopt gp_minimize)."
+    )
+    p.add_argument(
+        "--bayes-n-calls", type=int, default=150,
+        help="total evaluations per region for --method bayesian "
+             "(ignored under --method grid)."
+    )
+    p.add_argument(
+        "--bayes-n-initial", type=int, default=15,
+        help="random-initial evaluations before the GP surrogate kicks in "
+             "(--method bayesian only)."
     )
     return p.parse_args(argv)
 
@@ -394,7 +656,6 @@ def main(argv: list[str] | None = None) -> int:
     out_md = REPO_ROOT / ns.output_md
     regions = [r.strip() for r in ns.regions.split(",") if r.strip()]
 
-    grid = GRID_DRY if ns.dry_run else GRID_FULL
     sims = max(100, ns.sims) if not ns.dry_run else min(ns.sims, 200)
 
     if ns.workers and ns.workers > 0:
@@ -403,11 +664,44 @@ def main(argv: list[str] | None = None) -> int:
         cpu = mp.cpu_count() or 1
         workers = max(1, cpu - 1)
 
+    # Method-specific setup -------------------------------------------------
+    if ns.method == "grid":
+        grid = GRID_DRY if ns.dry_run else GRID_FULL
+        search_keys = list(grid.keys())
+        grid_size = 1
+        for _vs in grid.values():
+            grid_size *= len(_vs)
+        method_summary = (
+            f"grid_size={grid_size} "
+            f"({' x '.join(str(len(v)) for v in grid.values())})"
+        )
+        bayes_meta: dict | None = None
+    else:  # bayesian
+        space = SEARCH_SPACE_BAYES
+        search_keys = list(space.keys())
+        # Reduce the Bayesian budget under --dry-run so smoke tests stay
+        # under a minute, mirroring how GRID_DRY shrinks the grid path.
+        n_calls = min(ns.bayes_n_calls, 25) if ns.dry_run else ns.bayes_n_calls
+        n_initial = min(ns.bayes_n_initial, 8) if ns.dry_run else ns.bayes_n_initial
+        if n_initial > n_calls:
+            n_initial = max(1, n_calls // 2)
+        method_summary = f"n_calls={n_calls} (initial={n_initial})"
+        bayes_meta = {"n_calls": n_calls, "n_initial": n_initial}
+        # gp_minimize is sequential — warn loudly if the user asked for
+        # parallel workers under bayesian so the discrepancy is obvious.
+        if ns.workers and ns.workers > 1:
+            print(
+                f"  [warn] --workers={ns.workers} is ignored under "
+                "--method bayesian (gp_minimize is sequential).",
+                flush=True,
+            )
+
     observed_kills = load_observed_kills(csv_path) if csv_path.exists() else {}
 
-    print(f"fit_region_presets: csv={csv_path.name}, grid_size="
-          f"{len(grid['strength_sigma']) * len(grid['lost_kill_rate']) * len(grid['revive_knock_mean']) * len(grid['placement_kill_sharpness'])}, "
-          f"sims={sims}, workers={workers}, dry_run={ns.dry_run}")
+    print(f"fit_region_presets: method={ns.method}, csv={csv_path.name}, "
+          f"{method_summary}, sims={sims}, workers={workers}, "
+          f"dry_run={ns.dry_run}")
+    print(f"  fit params ({len(search_keys)}): {', '.join(search_keys)}")
 
     proposals: dict[str, dict] = {}
     for region in regions:
@@ -416,7 +710,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         kills = observed_kills.get(region)
         if kills is None:
-            # In dry-run we still want to exercise the grid; fall back to
+            # In dry-run we still want to exercise the search; fall back to
             # plausible placeholder values so the harness runs end-to-end.
             if ns.dry_run:
                 print(f"  [{region}] no kill data — using placeholder for dry-run",
@@ -430,10 +724,17 @@ def main(argv: list[str] | None = None) -> int:
             "mean_end_match": OBSERVED_MEAN_END_MATCH[region],
             "p1_kills": kills["p1_kills"],
             "p20_kills": kills["p20_kills"],
+            "kills_per_match": kills["kills_per_match"],
         }
-        scored = grid_search_region(
-            region, observed, grid, sims, workers, ns.seed,
-        )
+        if ns.method == "grid":
+            scored = grid_search_region(
+                region, observed, grid, sims, workers, ns.seed,
+            )
+        else:
+            scored = bayesian_search_region(
+                region, observed, SEARCH_SPACE_BAYES, sims, ns.seed,
+                bayes_meta["n_calls"], bayes_meta["n_initial"],
+            )
         best_ov, best_metrics, best_err = scored[0]
         proposals[region] = {
             "overrides": best_ov,
@@ -443,17 +744,23 @@ def main(argv: list[str] | None = None) -> int:
             "n_obs_matches": kills.get("n_matches", 0),
             "top3": scored[:3],
         }
+        params_str = ", ".join(
+            f"{k}={_fmt_param(k, best_ov[k])}" for k in search_keys
+        )
+        sim_m, sim_p1, sim_p20, sim_total = best_metrics
         print(
-            f"  [{region}] best: sigma={best_ov['strength_sigma']:.2f}, "
-            f"lost={best_ov['lost_kill_rate']:.3f}, "
-            f"revive={best_ov['revive_knock_mean']:.1f}, "
-            f"PKF={best_ov['placement_kill_sharpness']:.2f}  "
-            f"-> sim mean={best_metrics[0]:.2f} (obs {observed['mean_end_match']:.2f}), "
+            f"  [{region}] best: {params_str}  -> sim mean_end={sim_m:.2f} "
+            f"(obs {observed['mean_end_match']:.2f}), "
+            f"sim p1={sim_p1:.2f}/p20={sim_p20:.2f}/total={sim_total:.2f}, "
             f"err={best_err:.4f}",
             flush=True,
         )
 
-    render_proposal_md(proposals, out_md, grid, sims, ns.dry_run)
+    search_for_render = grid if ns.method == "grid" else SEARCH_SPACE_BAYES
+    render_proposal_md(
+        proposals, out_md, search_for_render, sims, ns.dry_run,
+        method=ns.method, bayes_meta=bayes_meta,
+    )
     print(f"\nProposal written: {out_md}")
     return 0
 
