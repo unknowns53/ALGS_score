@@ -348,6 +348,36 @@ note 投稿時は各 PNG を個別アップロードして該当箇所に差し�
 - 構成: 本ファイル `article_draft.md` は内部執筆用で第 1〜8 節を全て保持し、Part 2 の素材として使う。note 公開用 `article_draft_note.md` は第 1〜6 節 + 図 1〜8 のみに絞った Part 1 切り出し版 (著者側で編集中)。リードの問い (APAC-N が長引きやすい理由) は Part 1 で候補要因 5 つまで提示、Part 2 で地域別フィッティング結果として結論を出す
 - 数値の検算には `docs/sweep_equal_baseline.md`、過去大会データは `docs/data_validation.md`、地域別フィット結果は `docs/region_refit_proposal.md` を参照
 
+### 改訂サイクル 13 (第 2 部のベースラインを等戦力 → 傾斜下に切り替え + strength_sigma=0.30 を確定) — 2026-05-19
+- 「等戦力で仮定するのが前提でいいのか考え直したい」「現実は戦力に傾斜が掛かるので、実 ALGS 相当の値で本文を書いてしまってもいい」(著者方針) → 第 2 部全体 (第 2〜6 節) のベースラインを strength_sigma=0.05 (等戦力) から strength_sigma=0.30 (実 ALGS 相当の傾斜下) に切り替える方針を確定。問題意識は「読者への誠実性 (a)」が最優先、次いで「主要 5 要因の選定への疑念 (b)」
+- 採用値 0.30 の確定根拠 (3 系統の整合):
+  - cycle 9 grid fit ベスト解の 4 地域中央値 (americas/apac_n/apac_s=0.35, emea=0.27) の中点
+  - 6 試合固定 sim (MP オフ、3000 sims × 6 strength_sigma 値、ad-hoc Python) で出した順位別ポイント分布を著者がスクリム視聴感覚と照合 → 「0.2-0.4 あたりが妥当」「世界大会レベルでも 0.5 はありえない」と直感判断
+  - 0.30 はこの 2 系統の整合点であり、Bayesian full run の結果でも 0.4 を超えない範囲に収まれば妥当性が三重に裏付けられる
+- 6 試合固定 sim での副次的発見:
+  - **ポイント制度自体が傾斜を作る**: 等戦力 ss=0.05 でも 6 試合合計で 1 位=63p / 20 位=12p / gap=51p の分布が出る。これは ALGS の placement points 体系 (1st 12p, 20th 0p) と kill points が作る「順位ソート効果」で、戦力差ゼロでも見かけ上の順位分布が成立する。本文の第 2 節「ベース分布」でこの観察を強調すると、読者が「戦力差なしの世界でもこんなに分布する」と直感に反する発見として消化できる
+  - **cycle 9 fit の Americas/APAC-S=0.50 は grid 端 + over-fit 疑惑**: 世界大会レベルでも 0.5 はありえないという著者直感 (= スクリム視聴) と、cycle 9 fit で grid 上限の 0.50 に張り付いていた事実を合わせると、観測 4 成分 (mean_end / p1 / p20 / kills_per_match) への over-fit を疑う合理性がある。Bayesian full run で 0.4 を超える値が出たら sanity check 対象、観測ターゲット再設計 (cycle 12 宿題 #3) の根拠として再利用
+- 起点となった調査: 第 5 節「効かない 7 個」を strength_sigma=0.35 で再 sweep (29 conditions、`tools/run_tilted_sweep.ps1`)。結果は戦力モデル直結 4 つ (rank_beta / kill_beta / win_beta / placement_win_correlation) が ×5-22 で復活、特に rank_beta は ±0.6 試合 (lvl1=8.54, lvl5=7.40) と「主要 5 要因」並みの感度。respawn_dispersion は ×1.05 で傾斜下でも不変 (戦力モデルと無関係であることを実証)。base_match_noise / volatility_mean は ×1.6-3.8 で中間。Commit: `6450260`。再 sweep を ss=0.35 で回したが、本リライトで採用するベースは ss=0.30 なので、第 2 部リライト時には再々 sweep が必要 (倍率の qualitative trend は ss=0.30 でも同じ予想だが数値は変わる)
+- 設計の正当化 (本文に反映): 等戦力ベース sweep は「ルール側のレバー (lost_kill_rate / placement_kill_sharpness / respawn_mean / mp_win_penalty) を純粋に分離する顕微鏡」として機能していたが、それは「戦力差を介した間接効果」を不可視化する装置でもあった。傾斜下メイン化により、実 ALGS 相当の挙動を見せることが優先になる。「主要 5 要因」のラベル定義も「実 ALGS lobby で大会の長さを動かす上位 5 つ」に再定義される
+- 次セッション以降の実装タスク:
+  1. **残り 11 パラメータの傾斜下 sweep を ss=0.30 で**: 既存 ss=0.35 sweep (7 パラメータ) は参照用に並走、本リライトでは ss=0.30 ベースで再 sweep。新ベース `sweep_tilt30_base.json` + 12 パラメータ (= 既存 18 - 既に PKF 等で主要 5 要因に入っている 5) × 4 levels。`strength_sigma` 自体は対称 sweep ([0.10, 0.20, 0.30, 0.40, 0.50])。`tools/run_tilted_sweep.ps1` を ss=0.30 用に書き直すか姉妹スクリプト追加
+  2. **tools 拡張**: `tools/build_sweep_table.py` に `SWEEP_DEFINITIONS_TILT` を追加 (各パラメータの傾斜下版 5 levels、ベースは `sweep_tilt30_base.json`)。`tools/plot_equal_sweep.py` を傾斜下対応に (CLI フラグ `--mode tilt` で読み込み元 JSON を切り替え)。出力プレフィックスは `plot_tilt_sweep_<param>.png`
+  3. **第 2 部全体 (第 2〜6 節) リライト**: 第 2 節「ベース分布」も傾斜下版に差し替え (図 1 を `plot_tilt_base_distribution.png` に) + 「ポイント制度自体が傾斜を作る」観察を組み込み (等戦力でも 1st=63p / 20th=12p、図 or 表 1 つ)、第 3 節「主要 5 要因」を傾斜下数値で書き直し、subsection 順序が変わる可能性も考慮 (rank_beta が ±0.6 で大きい)、第 4 節 PKF subsection と respawn_mean subsection も数値更新、第 5 節「効かない 7 個」リストを傾斜下評価に更新 (戦力モデル直結 4 つはリストから外す or 「効くがシミュレータ係数」として別整理、respawn_dispersion はリストに残す、base_match_noise/volatility_mean は中間としてどう扱うか判断)、第 6 節「対照条件」も傾斜下で再評価
+  4. **Part 2 (フィッティング編) との接続整理**: (a) 傾斜下で復活した 4 つ (rank_beta 等) は「Apex のシミュレータ変換係数であってゲーム制度ではない」ため、地域間で動く理由が乏しい → Part 2 の fit 対象に含めない判断の根拠として明示。第 7 節 (Part 2) 冒頭でこの伏線を回収。(b) Bayesian full run の結果が ss > 0.4 の地域を出してきたら「世界大会レベルでもありえない値」として観測ターゲット再設計の引き金に。fit 結果の妥当性検証セクションを Part 2 内に新設
+  5. **Part 1 (note 公開分) との同期**: 鷹栖くん編集中の `article_draft_note.md` も第 2 部全体が書き換わる。同期作業は note 公開直前に著者側で実施
+- 妥当性確認データ (出典: 2026-05-19 セッション内 sim):
+
+  | rank | ss=0.05 | ss=0.20 | ss=0.27 | ss=0.30 (採用) | ss=0.35 | ss=0.50 |
+  |---|---|---|---|---|---|---|
+  | 1st | 63 | 66 | 68 | ~70 | 72 | 81 |
+  | 5th | 44 | 44 | 45 | ~45 | 45 | 46 |
+  | 10th | 33 | 33 | 32 | ~32 | 32 | 31 |
+  | 20th | 12 | 11 | 10 | ~9.5 | 9 | 7 |
+  | gap (1-20) | 51 | 56 | 59 | ~61 | 63 | 74 |
+
+  ss=0.30 行は 0.27/0.35 の補間値 (再 sweep で確定する)。著者直感では 1 位 ~70 点 / 20 位 ~10 点が ALGS 1 day スクリムの相場感に最も近い
+- 注意点: 既存の `sweep_eq_*.json` 18 ファイル + `plot_equal_sweep_*.png` 18 枚は完全に廃棄せず、`out/` に並走させたまま (gitignored、将来「等戦力ベースだとこう見えていた」と参照したくなる可能性のため)。第 2 部全体リライトはコストが大きいので 1 セッションでは収まらない可能性、上記 1-3 を別 commit で段階的に進めるのが筋
+
 ### 改訂サイクル 12 (第 2 回フィッティング方針の修正: Champs 投入を中止 + mp_win_penalty を fit 変数に追加) — 2026-05-19
 - サイクル 11 で「精度向上 2 本柱」として掲げた **Champs Group Stage 投入は中止**。理由 (著者判断): (a) Group Stage は地域混合 lobby (4 地域上位が 1 グループに同居) のため `strength_sigma` の意味が地域 fit と乖離する、(b) Group Stage は固定 6 試合・Match Point ルール非適用で、ロビー内の戦略圧力 (MP 圏内チームの順位狙い vs キル稼ぎの trade-off) が Pro League Finals と質的に異なる。サンプル数欲しさに混ぜると fit がノイズに引っ張られて逆効果のリスクが大きいと判断
 - 代わりに **`mp_win_penalty` を 5 番目の fit 変数として追加** (現状 4 → 5 パラメータ)。`tools/fit_region_presets.py` 冒頭コメント (lines 28-30) では「per-region MP-eligible win-rate 観測が必要」として除外していたが、ベイズ最適化文脈では mean_end (1 大会あたり試合数) への影響経由で fit 可能。MP 圏内チームの勝利抑制が強いほど大会が長引く方向にレバーが効くので、4 観測成分 (mean_end / p1 / p20 / kills_per_match) のうち mean_end と非自明に結合する。grid search で 5 次元化すると探索空間が爆発するため、これはベイズ最適化への切り替えと不可分のセット改訂
