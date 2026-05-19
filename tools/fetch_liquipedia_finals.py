@@ -35,10 +35,7 @@ import urllib.request
 API_URL = "https://liquipedia.net/apexlegends/api.php"
 UA = "algs-score-research/1.0 (https://github.com/unknowns53)"
 
-OPP_RE = re.compile(
-    r"opponent(\d+)=\{\{TeamOpponent\|([^|]+?)\s*\|(.*?\}\})\}\}",
-    re.DOTALL,
-)
+OPP_START_RE = re.compile(r"opponent(\d+)=\{\{TeamOpponent\|")
 MS_RE = re.compile(r"m(\d+)=\{\{MS\|(\d+)\|(\d+)\}\}")
 
 
@@ -59,15 +56,37 @@ def fetch_wikitext(page: str) -> str:
 
 
 def parse_per_match(wikitext: str) -> dict[int, dict[int, int]]:
-    """Return {match_number: {placement: kills}} for all m1..mN found."""
+    """Return {match_number: {placement: kills}} for all m1..mN found.
+
+    Walks the wikitext one opponent at a time. For each TeamOpponent
+    start, tracks brace depth to locate the matching closing `}}`, then
+    scans the bounded body for `mN={{MS|p|k}}` entries. This handles
+    both layouts seen on Liquipedia: `placement=N` at the start of the
+    block (regional Pro League Finals templates) and `placement=N` at
+    the end after `mN=...` (some Global Finals Playoffs templates).
+    """
     per_match: dict[int, dict[int, int]] = {}
-    for tm in OPP_RE.finditer(wikitext):
-        body = tm.group(3)
+    for m in OPP_START_RE.finditer(wikitext):
+        i = m.end()
+        depth = 1
+        j = i
+        while j < len(wikitext) - 1:
+            if wikitext[j:j + 2] == "{{":
+                depth += 1
+                j += 2
+            elif wikitext[j:j + 2] == "}}":
+                depth -= 1
+                j += 2
+                if depth == 0:
+                    break
+            else:
+                j += 1
+        body = wikitext[i:j - 2]
         for mm in MS_RE.finditer(body):
-            m = int(mm.group(1))
+            mn = int(mm.group(1))
             p = int(mm.group(2))
             k = int(mm.group(3))
-            per_match.setdefault(m, {})[p] = k
+            per_match.setdefault(mn, {})[p] = k
     return per_match
 
 
