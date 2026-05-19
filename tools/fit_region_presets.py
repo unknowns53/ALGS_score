@@ -298,33 +298,45 @@ def _normalized_squared_error(
     sim: tuple[float, float, float, float, float],
     obs: dict[str, float],
 ) -> float:
-    """Normalize each component by its observed magnitude before squaring.
+    """Normalize each component, then square.
 
-    Cycle 8: added the 4th component (kills_per_match). Without it the
-    fit only constrains 2 endpoints of the placement distribution (p1
-    and p20), leaving lost_kill_rate and respawn_mean (both drive the
-    per-match kill supply) un-anchored in their trade-off subspace.
+    Cycle 8: added the 4th component (kills_per_match) to anchor the
+    per-match kill supply.
 
-    Cycle 13 (2026-05): added the 5th component (p10_kills). With only
-    p1 + p20 + total constraining the placement-kill curve, the bayesian
-    fit for region=global pushed PKF / respawn_mean to their bounds in
-    pursuit of the global-specific bottom-zero observation (p20=0.08),
-    which emptied the mid-tier as a side-effect. Anchoring p10 (regional
-    obs 2.4-3.5, zero-rate 11-27%) gives the mid placements a hard
-    constraint and prevents that collapse. Floor at 1.0 (p10 is never
-    actually < 1.0 in regional/global obs, so the floor only protects
-    against pathological sim degeneration).
+    Cycle 13 (2026-05): added the 5th component (p10_kills) so the
+    mid-tier of the placement-kill distribution is constrained too.
+
+    Cycle 14 (2026-05): reworked the per-component scaling. The
+    cycle-8/13 design divided each kill component by its own observed
+    magnitude (with a floor for p20). That made Δkill=1 contribute
+    very different penalties depending on which placement was off:
+    on global, Δp20=1 / max(0.08, 0.5)² = (2.0)² = 4.0 in err, while
+    Δp1=1 / 9.47² = 0.011 — a 360x asymmetry for the same physical
+    "off by one kill" mistake. The bayesian fit was effectively
+    optimizing p20 alone, with p1/p10/total along for the ride.
+
+    The cycle-14 design uses a single shared scale for all three
+    per-team kill metrics: k_scale = obs_total / num_teams (= the
+    average per-team kill count per match, ≈ 2.8-3.1 across regions).
+    Δkill = 1 now contributes the same to err regardless of placement,
+    which matches the physical claim that 1 kill is 1 kill. The total
+    component is normalized at lobby scale (k_scale * num_teams =
+    obs_total) so that "1 extra team-kill summed across the lobby"
+    matches "1 extra kill at any single placement".
+
+    NUM_TEAMS_HARDCODE: SimulationConfig.num_teams isn't threaded down
+    here, but every ALGS Match Point Final fits with 20 teams; the
+    constant matches that and is the right number for the obs side.
     """
+    NUM_TEAMS = 20
     sim_mean, sim_p1, sim_p10, sim_p20, sim_total = sim
+    k_scale = max(obs["kills_per_match"] / NUM_TEAMS, 1.0)
     err = 0.0
     err += ((sim_mean - obs["mean_end_match"]) / max(obs["mean_end_match"], 1e-6)) ** 2
-    err += ((sim_p1 - obs["p1_kills"]) / max(obs["p1_kills"], 1e-6)) ** 2
-    p10_scale = max(obs["p10_kills"], 1.0)
-    err += ((sim_p10 - obs["p10_kills"]) / p10_scale) ** 2
-    # p20 can be ~0; floor at 0.5 so a single-kill difference is not infinite.
-    p20_scale = max(obs["p20_kills"], 0.5)
-    err += ((sim_p20 - obs["p20_kills"]) / p20_scale) ** 2
-    err += ((sim_total - obs["kills_per_match"]) / max(obs["kills_per_match"], 1e-6)) ** 2
+    err += ((sim_p1 - obs["p1_kills"]) / k_scale) ** 2
+    err += ((sim_p10 - obs["p10_kills"]) / k_scale) ** 2
+    err += ((sim_p20 - obs["p20_kills"]) / k_scale) ** 2
+    err += ((sim_total - obs["kills_per_match"]) / (k_scale * NUM_TEAMS)) ** 2
     return err
 
 
@@ -637,9 +649,11 @@ def render_proposal_md(
     lines.append("## 上位 3 候補 (各地域、観測との正規化二乗誤差 — 5 成分)")
     lines.append("")
     lines.append(
-        "err = (Δmean_end/obs)² + (Δp1/obs_p1)² + (Δp10/max(obs_p10,1.0))² "
-        "+ (Δp20/max(obs_p20,0.5))² + (Δtotal/obs_total)². "
-        "各成分は観測値で割って正規化した二乗差。"
+        "err = (Δmean_end/obs)² + (Δp1/k_scale)² + (Δp10/k_scale)² "
+        "+ (Δp20/k_scale)² + (Δtotal/(k_scale*20))². "
+        "ただし k_scale = obs_total/20 ≈ 2.8-3.1 (per-team mean kills)。"
+        "Cycle 14 (2026-05): 全 kill metrics を共通スケール (1 kill = 1 "
+        "unit、placement 非依存) で正規化。"
     )
     lines.append("")
     for region in _display_region_order(proposals):
