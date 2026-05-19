@@ -139,14 +139,14 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
     "americas": {
         # Calibrated against 4 historical Americas Pro League finals
         # (2024 S1/S2, 2025 S1/S2): mean 7.50 games.
-        # Cycle 5 (2026-05): grid search against per-match standings
-        # (30 matches) re-set the 4 fittable knobs to
-        # strength_sigma=0.35, lost_kill_rate=0.04, revive_knock_mean=13.0,
-        # placement_kill_sharpness=0.60 (new key). The fit picks the
-        # shortest sim achievable in the grid (sim 8.14 vs obs 7.50) — the
-        # 30-match sample is dominated by 2025 S2 long lobbies, so the
-        # observed mean drifts above the docs/data_validation.md baseline
-        # but this is the best in-grid solution.
+        # Cycle 9 (2026-05): 4-parameter grid search (900 conditions x
+        # 2000 sims, 4-component normalized squared error) re-set
+        # strength_sigma=0.35, lost_kill_rate=0.04, PKF=0.60,
+        # respawn_mean=10.0. Sim 7.94 vs obs 7.50, err=0.0824. PKF and
+        # respawn_mean both pinned at grid edges (0.60 and 10.0); p1 kill
+        # gap remains (sim 6.86 vs obs 9.03) — Americas observation has
+        # uniquely high top-team kill volume that the grid can't reach
+        # without dropping PKF below 0.60 (which would lose meaning).
         "strength_sigma": 0.35,
         "rank_beta": 1.00,
         "kill_beta": 0.85,
@@ -158,7 +158,7 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 0.95,
         "volatility_sigma": 0.20,
         "respawn_model": "negbin",
-        "respawn_mean": 6.0,
+        "respawn_mean": 10.0,
         "respawn_dispersion": 4.0,
         "neutral_death_rate": 0.03,
         "lost_kill_rate": 0.04,
@@ -175,11 +175,11 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # (2024 S1/S2, 2025 S1/S2): mean 8.50 games. EMEA is much more
         # contested than the "structured & low chaos" stereotype, so
         # parity is closer to APAC-N levels.
-        # Cycle 5 (2026-05): grid search (34 matches) confirmed
-        # strength_sigma=0.27 (tighter than previous 0.30) but bumped
-        # lost_kill_rate 0.07 -> 0.12 (top of grid) and PKF to 1.20.
-        # Excellent fit (err 0.0006): sim 8.61 vs obs 8.50, p1 9.64 vs 9.44,
-        # p20 0.56 vs 0.56. EMEA is the cleanest fit of all four regions.
+        # Cycle 9 (2026-05): 4-parameter grid search (900 conditions x
+        # 2000 sims) re-set strength_sigma=0.27, lost_kill_rate=0.10
+        # (was 0.12, now interior), PKF=1.20, respawn_mean=6.0 (was 6.5).
+        # Best fit of all four regions: sim 8.49 vs obs 8.50, p1 9.82 vs
+        # 9.44, p20 0.57 vs 0.56, total 54.50 vs 56.50, err=0.0031.
         "strength_sigma": 0.27,
         "rank_beta": 0.95,
         "kill_beta": 0.80,
@@ -191,10 +191,10 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 1.05,
         "volatility_sigma": 0.28,
         "respawn_model": "negbin",
-        "respawn_mean": 6.5,
+        "respawn_mean": 6.0,
         "respawn_dispersion": 3.5,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.12,
+        "lost_kill_rate": 0.10,
         "transfer_kill_rate": 0.05,
         "revive_knock_mean": 7.0,
         "placement_kill_sharpness": 1.20,
@@ -206,13 +206,12 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
     "apac_n": {
         # Calibrated against 4 historical APAC North Pro League finals
         # (2024 S1/S2, 2025 S1/S2): mean 8.75 games.
-        # Cycle 5 (2026-05): grid search (35 matches) re-set
-        # strength_sigma 0.27 -> 0.35 (more parity than previously
-        # estimated — the 13-game outlier overstated parity in cycle 4),
-        # lost_kill_rate 0.10 -> 0.04, revive_knock_mean 12.0 -> 9.0,
-        # PKF=1.00. sim 8.39 vs obs 8.75 (err 0.012). The PKF=1.00 result
-        # is interesting: APAC-N's long tournaments are NOT driven by a
-        # flatter kill distribution but by tighter parity (strength_sigma).
+        # Cycle 9 (2026-05): 4-parameter grid search (900 conditions x
+        # 2000 sims) re-set strength_sigma=0.35, lost_kill_rate=0.04,
+        # PKF=1.00, respawn_mean=6.0 (was 7.0). sim 8.31 vs obs 8.75,
+        # p1 9.02 vs 9.97, p20 0.82 vs 0.80, total 58.53 vs 55.40,
+        # err=0.0154. APAC-N's long tournaments are driven by tighter
+        # parity (strength_sigma=0.35) rather than a flatter kill curve.
         "strength_sigma": 0.35,
         "rank_beta": 0.85,
         "kill_beta": 0.75,
@@ -224,7 +223,7 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 1.10,
         "volatility_sigma": 0.30,
         "respawn_model": "negbin",
-        "respawn_mean": 7.0,
+        "respawn_mean": 6.0,
         "respawn_dispersion": 3.0,
         "neutral_death_rate": 0.03,
         "lost_kill_rate": 0.04,
@@ -240,13 +239,16 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # Calibrated against 4 historical APAC South Pro League finals
         # (2024 S1/S2, 2025 S1/S2): mean 8.00 games. Slightly shorter
         # than APAC-N, slightly longer than Americas.
-        # Cycle 5 (2026-05): grid search (27 matches, 20 complete — the
-        # 2024 S1 Games 6-10 and 2024 S2 Game 7 standings are missing in
-        # Liquipedia coverage) suggests strength_sigma=0.27,
-        # lost_kill_rate=0.04, revive_knock_mean=7.0, PKF=0.60.
-        # sim 8.65 vs obs 8.00 (err 0.097). Smallest data set of the four
-        # regions — the fit drifts long, but in-grid the closest solution.
-        "strength_sigma": 0.27,
+        # Cycle 9 (2026-05): 4-parameter grid search (900 conditions x
+        # 2000 sims, 27 matches available — 2024 S1 Games 6-10 and
+        # 2024 S2 Game 7 standings are missing in Liquipedia coverage)
+        # re-set strength_sigma=0.35 (was 0.27), lost_kill_rate=0.04,
+        # PKF=0.60, respawn_mean=10.0 (was 6.5). sim 8.20 vs obs 8.00,
+        # p1 6.73 vs 8.44, total 62.34 vs 50.52, err=0.1164. PKF and
+        # respawn_mean both pinned at grid edges; total-kills overshoot
+        # (62 vs 51) is the dominant residual — APAC-S's small sample
+        # mean is unusually low and the grid cannot fully accommodate it.
+        "strength_sigma": 0.35,
         "rank_beta": 0.95,
         "kill_beta": 0.72,
         "win_beta": 0.85,
@@ -257,7 +259,7 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 0.98,
         "volatility_sigma": 0.25,
         "respawn_model": "negbin",
-        "respawn_mean": 6.5,
+        "respawn_mean": 10.0,
         "respawn_dispersion": 3.5,
         "neutral_death_rate": 0.03,
         "lost_kill_rate": 0.04,

@@ -276,33 +276,38 @@ def table_categorical_conditions() -> Path:
 # ---------------------------------------------------------------------------
 def table_region_refit() -> Path:
     headers = ["Region", "strength_sigma", "PKF", "lost_kill_rate",
-               "revive_knock_mean", "obs mean", "sim mean"]
-    # Values from tools/fit_region_presets.py run on 2026-05-17
-    # (docs/region_refit_proposal.md). Observed mean from
-    # docs/data_validation.md section 2-B (Y4-Y5 19-event survey).
+               "respawn_mean", "obs mean", "sim mean", "err"]
+    # Values from tools/fit_region_presets.py cycle 9 run on 2026-05-18
+    # (4-parameter grid x 900 conditions x 2000 sims, 4-component
+    # normalized squared error). See docs/region_refit_proposal.md.
+    # Observed mean from docs/data_validation.md section 2-B.
     rows = [
-        ["Americas", "0.35", "0.60", "0.040", "13.0", "7.50", "8.14"],
-        ["EMEA",     "0.27", "1.20", "0.120",  "7.0", "8.50", "8.61"],
-        ["APAC-N",   "0.35", "1.00", "0.040",  "9.0", "8.75", "8.39"],
-        ["APAC-S",   "0.27", "0.60", "0.040",  "7.0", "8.00", "8.65"],
+        ["Americas", "0.35", "0.60", "0.040", "10.0", "7.50", "7.94", "0.082"],
+        ["EMEA",     "0.27", "1.20", "0.100",  "6.0", "8.50", "8.49", "0.003"],
+        ["APAC-N",   "0.35", "1.00", "0.040",  "6.0", "8.75", "8.31", "0.015"],
+        ["APAC-S",   "0.35", "0.60", "0.040", "10.0", "8.00", "8.20", "0.116"],
     ]
     return render_table(
         headers, rows,
         filename="table_8_region_refit.png",
-        col_widths=[1.4, 1.9, 1.0, 1.7, 2.0, 1.3, 1.3],
+        col_widths=[1.4, 1.9, 1.0, 1.7, 1.7, 1.3, 1.3, 1.1],
         bold_cols=[2],
         fontsize=10,
-        title="地域別フィッティング結果 (grid search, 2026-05)",
+        title="地域別フィッティング結果 (4 パラメータ grid search, cycle 9, 2026-05)",
     )
 
 
 def main() -> int:
+    # table_transfer_kill_rate is intentionally excluded from the article
+    # builders: per article revision cycle 7, transfer_kill_rate is no
+    # longer a Section-5 independent factor (it acts as a PKF-application
+    # multiplier per match_sim.allocate_kills steal path). The function
+    # is kept for inspection use, but not rendered for the article.
     builders = [
         table_base_metrics,
         table_main_5_factors,
         table_mp_pressure_3,
         table_placement_kill_sharpness,
-        table_transfer_kill_rate,
         table_inert_params,
         table_categorical_conditions,
         table_region_refit,
