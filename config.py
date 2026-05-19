@@ -9,6 +9,13 @@ from typing import Literal
 RespawnModel = Literal["poisson", "negbin"]
 StartingPointsMode = Literal["none", "seeded", "custom"]
 RegionProfile = Literal["custom", "americas", "emea", "apac_n", "apac_s", "global"]
+# Cycle 14 (2026-05): "wb_eb" composes the finals lobby as the top
+# (wb_top_n + eb_top_n) teams of a larger pool_size population — the
+# physical analogue of ALGS Global Finals where 20 finalists are the
+# survivors of a Winners Bracket (top 10) and Elimination Bracket
+# (next 10) stage drawn from a ~40-team Group Stage pool. "normal" is
+# the legacy direct-sample mode used by all regional Pro League finals.
+LobbyComposition = Literal["normal", "wb_eb"]
 
 
 # Placement points table (1st .. 20th).
@@ -63,6 +70,18 @@ class SimulationConfig:
 
     # Team strength
     strength_sigma: float = 0.45
+    # Cycle 14 (2026-05): lobby composition model.
+    #   "normal" — direct multivariate-normal sample of num_teams teams.
+    #             Used by regional Pro League finals.
+    #   "wb_eb"  — sample a `pool_size`-team population, then select the
+    #             composite top (wb_top_n + eb_top_n) into the finals
+    #             lobby. Models the ALGS Global Finals where 20 finalists
+    #             come from the Group Stage's top 20 (10 via Winners
+    #             Bracket, 10 via Elimination Bracket).
+    lobby_composition: LobbyComposition = "normal"
+    pool_size: int = 40
+    wb_top_n: int = 10
+    eb_top_n: int = 10
     rank_beta: float = 1.0
     kill_beta: float = 0.8
     win_beta: float = 0.8
@@ -284,8 +303,14 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
     "global": {
         # Cross-regional Global Finals lobbies (Y4 Split 1/Split 2 Playoffs
         # Finals, 2025 Championship, 2025 Midseason Playoffs Finals — 4
-        # events, 36 matches total). Strength variance reflects worldwide
-        # invitation-only team distribution, not within-region parity:
+        # events, 36 matches total). 20 finalists come from the Group
+        # Stage's top survivors (Winners Bracket 10 + Elimination
+        # Bracket 10 out of a ~40-team Group Stage pool). Cycle 14
+        # (2026-05) introduces lobby_composition="wb_eb" to model this
+        # pool→top-20 selection — see LobbyComposition above.
+        # Earlier cycles assumed an invitation-only top-cluster, but
+        # that was incorrect; the lobby is the order-statistic top of
+        # a larger Group Stage population.
         # observed p20 = 0.08 kills/match (vs 0.56-1.60 for regional
         # finals) signals that the bottom of a cross-regional lobby is
         # wiped quickly, which requires a larger strength_sigma than any
@@ -319,6 +344,14 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # A future cycle should introduce a non-normal team-strength
         # distribution (mixture / clipped / cluster model) for global
         # before drawing inference from this preset.
+        # Cycle 13 (normal model) numerics are kept as the starting
+        # point. Cycle 14 will re-run bayesian fit under wb_eb; until
+        # then these sigma/lost_kill/PKF/respawn/mp_win values are an
+        # interim approximation under the new pool→top-20 model.
+        "lobby_composition": "wb_eb",
+        "pool_size": 40,
+        "wb_top_n": 10,
+        "eb_top_n": 10,
         "strength_sigma": 0.700,
         "rank_beta": 0.95,
         "kill_beta": 0.80,
