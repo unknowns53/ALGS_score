@@ -114,11 +114,19 @@ from tournament_sim import simulate_tournament
 # Mean ending match per region from docs/data_validation.md section 2-B
 # (19 ALGS Match Point Finals, Y4-Y5). Hardcoded because that file is a
 # hand-curated markdown table; do not change here without updating it.
+#
+# Cycle 13 (2026-05): added "global" entry. Source is direct computation
+# from data/region_kill_breakdown.csv region=global rows (4 events:
+# 2024-S1-Playoffs-Finals=8, 2024-S2-Playoffs-Finals=10,
+# 2025-Championship-Finals=9, 2025-Midseason-Playoffs-Finals=9 → mean=9.00).
+# Not present in docs/data_validation.md (which tracks regional Pro League
+# Finals only); update that document when reflecting global results.
 OBSERVED_MEAN_END_MATCH: dict[str, float] = {
     "americas": 7.50,
     "emea": 8.50,
     "apac_n": 8.75,
     "apac_s": 8.00,
+    "global": 9.00,
 }
 
 # Default grid (full run).
@@ -176,10 +184,13 @@ def _strip_comment_lines(path: Path) -> list[str]:
 
 
 def load_observed_kills(csv_path: Path) -> dict[str, dict[str, float]]:
-    """Aggregate per-region p1_kills, p20_kills, kills_per_match from CSV.
+    """Aggregate per-region p1_kills, p10_kills, p20_kills, kills_per_match.
 
-    Returns {region: {"p1_kills": x, "p20_kills": y, "kills_per_match": z,
-                      "n_matches": int}}.
+    Returns {region: {"p1_kills": x, "p10_kills": w, "p20_kills": y,
+                      "kills_per_match": z, "n_matches": int}}.
+
+    Cycle 13 (2026-05): added p10_kills (mid-tier mean) for the 5th err
+    component.
     """
     rows = _strip_comment_lines(csv_path)
     if not rows:
@@ -204,11 +215,14 @@ def load_observed_kills(csv_path: Path) -> dict[str, dict[str, float]]:
     aggregated: dict[str, dict[str, float]] = {}
     for region, matches in bucket.items():
         p1_list: list[int] = []
+        p10_list: list[int] = []
         p20_list: list[int] = []
         per_match_totals: list[int] = []
         for (_t, _m), placement_to_kills in matches.items():
             if 1 in placement_to_kills:
                 p1_list.append(placement_to_kills[1])
+            if 10 in placement_to_kills:
+                p10_list.append(placement_to_kills[10])
             if 20 in placement_to_kills:
                 p20_list.append(placement_to_kills[20])
             per_match_totals.append(sum(placement_to_kills.values()))
@@ -217,6 +231,12 @@ def load_observed_kills(csv_path: Path) -> dict[str, dict[str, float]]:
             continue
         aggregated[region] = {
             "p1_kills": float(np.mean(p1_list)),
+            # Cycle 13 (2026-05): added p10 as a 5th observation component.
+            # Constrains the mid-tier of the placement-kill distribution so
+            # the bayesian fit cannot satisfy bottom-zero p20 by collapsing
+            # PKF / respawn_mean to their extremes (which empties the mid
+            # tier as a side-effect).
+            "p10_kills": float(np.mean(p10_list)) if p10_list else 0.0,
             "p20_kills": float(np.mean(p20_list)) if p20_list else 0.0,
             "kills_per_match": float(np.mean(per_match_totals)),
             "n_matches": len(matches),
@@ -229,12 +249,17 @@ def load_observed_kills(csv_path: Path) -> dict[str, dict[str, float]]:
 # ---------------------------------------------------------------------------
 def _measure_one_config(
     cfg: SimulationConfig, n_sims: int, seed: int
-) -> tuple[float, float, float, float]:
+) -> tuple[float, float, float, float, float]:
     """Run `n_sims` tournaments and return (mean_end_match, p1_kills,
-    p20_kills, kills_per_match) averaged across all matches in all sims."""
+    p10_kills, p20_kills, kills_per_match) averaged across all matches.
+
+    Cycle 13 (2026-05): added p10_kills as a 5th component so the
+    mid-tier of the placement-kill distribution is constrained too.
+    """
     rng = np.random.default_rng(seed)
     lengths: list[int] = []
     p1_kills: list[int] = []
+    p10_kills: list[int] = []
     p20_kills: list[int] = []
     match_totals: list[int] = []
     for _ in range(n_sims):
@@ -243,13 +268,16 @@ def _measure_one_config(
         for mr in tr.match_results:
             # placements is team_id ordered 1st..20th
             p1_tid = int(mr.placements[0])
+            p10_tid = int(mr.placements[9])
             p20_tid = int(mr.placements[-1])
             p1_kills.append(int(mr.team_kills[p1_tid]))
+            p10_kills.append(int(mr.team_kills[p10_tid]))
             p20_kills.append(int(mr.team_kills[p20_tid]))
             match_totals.append(int(mr.scored_kills))
     return (
         float(np.mean(lengths)),
         float(np.mean(p1_kills)),
+        float(np.mean(p10_kills)),
         float(np.mean(p20_kills)),
         float(np.mean(match_totals)),
     )
@@ -267,7 +295,7 @@ def _worker_eval(args):
 # Grid search per region
 # ---------------------------------------------------------------------------
 def _normalized_squared_error(
-    sim: tuple[float, float, float, float],
+    sim: tuple[float, float, float, float, float],
     obs: dict[str, float],
 ) -> float:
     """Normalize each component by its observed magnitude before squaring.
@@ -276,11 +304,23 @@ def _normalized_squared_error(
     fit only constrains 2 endpoints of the placement distribution (p1
     and p20), leaving lost_kill_rate and respawn_mean (both drive the
     per-match kill supply) un-anchored in their trade-off subspace.
+
+    Cycle 13 (2026-05): added the 5th component (p10_kills). With only
+    p1 + p20 + total constraining the placement-kill curve, the bayesian
+    fit for region=global pushed PKF / respawn_mean to their bounds in
+    pursuit of the global-specific bottom-zero observation (p20=0.08),
+    which emptied the mid-tier as a side-effect. Anchoring p10 (regional
+    obs 2.4-3.5, zero-rate 11-27%) gives the mid placements a hard
+    constraint and prevents that collapse. Floor at 1.0 (p10 is never
+    actually < 1.0 in regional/global obs, so the floor only protects
+    against pathological sim degeneration).
     """
-    sim_mean, sim_p1, sim_p20, sim_total = sim
+    sim_mean, sim_p1, sim_p10, sim_p20, sim_total = sim
     err = 0.0
     err += ((sim_mean - obs["mean_end_match"]) / max(obs["mean_end_match"], 1e-6)) ** 2
     err += ((sim_p1 - obs["p1_kills"]) / max(obs["p1_kills"], 1e-6)) ** 2
+    p10_scale = max(obs["p10_kills"], 1.0)
+    err += ((sim_p10 - obs["p10_kills"]) / p10_scale) ** 2
     # p20 can be ~0; floor at 0.5 so a single-kill difference is not infinite.
     p20_scale = max(obs["p20_kills"], 0.5)
     err += ((sim_p20 - obs["p20_kills"]) / p20_scale) ** 2
@@ -295,7 +335,7 @@ def grid_search_region(
     n_sims: int,
     workers: int,
     seed: int,
-) -> list[tuple[dict, tuple[float, float, float, float], float]]:
+) -> list[tuple[dict, tuple[float, float, float, float, float], float]]:
     """Return [(overrides, metrics, err), ...] sorted by err ascending."""
     base_cfg = apply_region_profile(SimulationConfig(), region)
 
@@ -310,7 +350,7 @@ def grid_search_region(
 
     args_list = [(base_cfg, ov, n_sims, seed) for ov in combos]
 
-    results: list[tuple[dict, tuple[float, float, float, float]]] = []
+    results: list[tuple[dict, tuple[float, float, float, float, float]]] = []
     t0 = time.perf_counter()
     # 5% progress steps so long fits surface ETA / best_err frequently.
     progress_step = max(1, total // 20)
@@ -334,7 +374,7 @@ def grid_search_region(
             flush=True,
         )
 
-    def _update_best(ov: dict, metrics: tuple[float, float, float, float]) -> None:
+    def _update_best(ov: dict, metrics: tuple[float, float, float, float, float]) -> None:
         nonlocal best_err_so_far, best_ov_so_far
         cand_err = _normalized_squared_error(metrics, observed)
         if cand_err < best_err_so_far:
@@ -378,7 +418,7 @@ def bayesian_search_region(
     seed: int,
     n_calls: int,
     n_initial: int,
-) -> list[tuple[dict, tuple[float, float, float, float], float]]:
+) -> list[tuple[dict, tuple[float, float, float, float, float], float]]:
     """Gaussian-process Bayesian fit via `skopt.gp_minimize`.
 
     Returns [(overrides, metrics, err), ...] sorted by err ascending, in
@@ -407,7 +447,7 @@ def bayesian_search_region(
     keys = list(space.keys())
     dimensions = [Real(low, high, name=k) for k, (low, high) in space.items()]
 
-    records: list[tuple[dict, tuple[float, float, float, float], float]] = []
+    records: list[tuple[dict, tuple[float, float, float, float, float], float]] = []
     print(
         f"  [{region}] bayes: n_calls={n_calls} (initial={n_initial}) "
         f"x {n_sims} sims/eval, {len(keys)} dims ...",
@@ -492,7 +532,17 @@ def render_proposal_md(
     or the Bayesian space dict for method=bayesian (param -> (low, high)
     tuple). `bayes_meta` carries {n_calls, n_initial} when method=bayesian
     so the report can record the budget.
+
+    Display order: the canonical 4-region set first (with `[no data]`
+    placeholders if a region wasn't fit this run), followed by any extra
+    regions present in `proposals` (e.g. cycle-13 added "global").
     """
+
+    def _display_region_order(props: dict) -> list[str]:
+        canonical = ["americas", "emea", "apac_n", "apac_s"]
+        extras = [r for r in props if r not in canonical]
+        return canonical + sorted(extras)
+
     keys = list(search.keys())
     title_suffix = "ベイズ最適化提案" if method == "bayesian" else "grid search 提案"
     method_blurb = (
@@ -534,24 +584,25 @@ def render_proposal_md(
     header_cols = ["region"] + keys + [
         "obs mean_end", "sim mean_end",
         "obs p1_kills", "sim p1_kills",
+        "obs p10_kills", "sim p10_kills",
         "obs p20_kills", "sim p20_kills",
         "obs total_kills", "sim total_kills",
         "err", "n_obs_matches",
     ]
     lines.append("| " + " | ".join(header_cols) + " |")
     lines.append("|" + "---|" * len(header_cols))
-    for region in ("americas", "emea", "apac_n", "apac_s"):
+    for region in _display_region_order(proposals):
         if region not in proposals:
             placeholder = (
                 ["[no data]"] + [""] * len(keys)
                 + [f"{OBSERVED_MEAN_END_MATCH.get(region, '-')}"]
-                + ["—"] * 7 + ["0"]
+                + ["—"] * 9 + ["0"]
             )
             lines.append(f"| {region} | " + " | ".join(placeholder) + " |")
             continue
         p = proposals[region]
         ov = p["overrides"]
-        sim_m, sim_p1, sim_p20, sim_total = p["metrics"]
+        sim_m, sim_p1, sim_p10, sim_p20, sim_total = p["metrics"]
         obs = p["observed"]
         row = [region]
         for k in keys:
@@ -559,37 +610,39 @@ def render_proposal_md(
         row += [
             f"{obs['mean_end_match']:.2f}", f"{sim_m:.2f}",
             f"{obs['p1_kills']:.2f}", f"{sim_p1:.2f}",
+            f"{obs['p10_kills']:.2f}", f"{sim_p10:.2f}",
             f"{obs['p20_kills']:.2f}", f"{sim_p20:.2f}",
             f"{obs['kills_per_match']:.2f}", f"{sim_total:.2f}",
             f"{p['err']:.4f}", str(p['n_obs_matches']),
         ]
         lines.append("| " + " | ".join(row) + " |")
     lines.append("")
-    lines.append("## 上位 3 候補 (各地域、観測との正規化二乗誤差 — 4 成分)")
+    lines.append("## 上位 3 候補 (各地域、観測との正規化二乗誤差 — 5 成分)")
     lines.append("")
     lines.append(
-        "err = (Δmean_end/obs)² + (Δp1/obs_p1)² + (Δp20/max(obs_p20,0.5))² "
-        "+ (Δtotal/obs_total)². 各成分は観測値で割って正規化した二乗差。"
+        "err = (Δmean_end/obs)² + (Δp1/obs_p1)² + (Δp10/max(obs_p10,1.0))² "
+        "+ (Δp20/max(obs_p20,0.5))² + (Δtotal/obs_total)². "
+        "各成分は観測値で割って正規化した二乗差。"
     )
     lines.append("")
-    for region in ("americas", "emea", "apac_n", "apac_s"):
+    for region in _display_region_order(proposals):
         if region not in proposals:
             continue
         lines.append(f"### {region}")
         lines.append("")
         top_cols = (["rank"] + keys
-                    + ["sim mean_end", "sim p1_kills", "sim p20_kills",
-                       "sim total_kills", "err"])
+                    + ["sim mean_end", "sim p1_kills", "sim p10_kills",
+                       "sim p20_kills", "sim total_kills", "err"])
         lines.append("| " + " | ".join(top_cols) + " |")
         lines.append("|" + "---|" * len(top_cols))
         for rank, (ov, metrics, err) in enumerate(proposals[region]["top3"], 1):
-            sim_m, sim_p1, sim_p20, sim_total = metrics
+            sim_m, sim_p1, sim_p10, sim_p20, sim_total = metrics
             row = [str(rank)]
             for k in keys:
                 row.append(_fmt_param(k, ov[k]))
             row += [
-                f"{sim_m:.2f}", f"{sim_p1:.2f}", f"{sim_p20:.2f}",
-                f"{sim_total:.2f}", f"{err:.4f}",
+                f"{sim_m:.2f}", f"{sim_p1:.2f}", f"{sim_p10:.2f}",
+                f"{sim_p20:.2f}", f"{sim_total:.2f}", f"{err:.4f}",
             ]
             lines.append("| " + " | ".join(row) + " |")
         lines.append("")
@@ -649,12 +702,36 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+# Cycle 13 (2026-05): canonical regional proposal file is rebuilt only
+# when the full 4-region cycle-9 set is fit at once. Partial runs
+# (e.g. --regions global, or a single-region re-fit) are auto-redirected
+# to a per-run filename so the canonical file's cycle-9 contents are
+# never silently clobbered. Pass --output-md explicitly to override.
+DEFAULT_OUTPUT_MD = "docs/region_refit_proposal.md"
+CANONICAL_REGION_SET = ("americas", "apac_n", "apac_s", "emea")
+
+
 def main(argv: list[str] | None = None) -> int:
     ns = _parse_args(argv)
 
     csv_path = REPO_ROOT / ns.observations
-    out_md = REPO_ROOT / ns.output_md
     regions = [r.strip() for r in ns.regions.split(",") if r.strip()]
+
+    # Side-effect guard: if --output-md is at its default and --regions
+    # is anything other than the canonical 4-region set, redirect to a
+    # per-region path. Otherwise a single-region run would replace the
+    # canonical proposal with a one-line table.
+    output_md_arg = ns.output_md
+    if (output_md_arg == DEFAULT_OUTPUT_MD
+            and tuple(sorted(regions)) != CANONICAL_REGION_SET):
+        suffix = "_".join(sorted(regions))
+        output_md_arg = f"docs/region_refit_proposal__{suffix}.md"
+        print(
+            f"  [guard] --regions != canonical set; redirecting --output-md "
+            f"to {output_md_arg} to protect {DEFAULT_OUTPUT_MD}",
+            flush=True,
+        )
+    out_md = REPO_ROOT / output_md_arg
 
     sims = max(100, ns.sims) if not ns.dry_run else min(ns.sims, 200)
 
@@ -715,7 +792,7 @@ def main(argv: list[str] | None = None) -> int:
             if ns.dry_run:
                 print(f"  [{region}] no kill data — using placeholder for dry-run",
                       flush=True)
-                kills = {"p1_kills": 7.4, "p20_kills": 0.7,
+                kills = {"p1_kills": 7.4, "p10_kills": 2.7, "p20_kills": 0.7,
                          "kills_per_match": 52.0, "n_matches": 0}
             else:
                 print(f"  [{region}] skip: no kill data in CSV", flush=True)
@@ -723,6 +800,7 @@ def main(argv: list[str] | None = None) -> int:
         observed = {
             "mean_end_match": OBSERVED_MEAN_END_MATCH[region],
             "p1_kills": kills["p1_kills"],
+            "p10_kills": kills["p10_kills"],
             "p20_kills": kills["p20_kills"],
             "kills_per_match": kills["kills_per_match"],
         }
@@ -747,12 +825,12 @@ def main(argv: list[str] | None = None) -> int:
         params_str = ", ".join(
             f"{k}={_fmt_param(k, best_ov[k])}" for k in search_keys
         )
-        sim_m, sim_p1, sim_p20, sim_total = best_metrics
+        sim_m, sim_p1, sim_p10, sim_p20, sim_total = best_metrics
         print(
             f"  [{region}] best: {params_str}  -> sim mean_end={sim_m:.2f} "
             f"(obs {observed['mean_end_match']:.2f}), "
-            f"sim p1={sim_p1:.2f}/p20={sim_p20:.2f}/total={sim_total:.2f}, "
-            f"err={best_err:.4f}",
+            f"sim p1={sim_p1:.2f}/p10={sim_p10:.2f}/p20={sim_p20:.2f}/"
+            f"total={sim_total:.2f}, err={best_err:.4f}",
             flush=True,
         )
 

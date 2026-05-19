@@ -8,7 +8,7 @@ from typing import Literal
 
 RespawnModel = Literal["poisson", "negbin"]
 StartingPointsMode = Literal["none", "seeded", "custom"]
-RegionProfile = Literal["custom", "americas", "emea", "apac_n", "apac_s"]
+RegionProfile = Literal["custom", "americas", "emea", "apac_n", "apac_s", "global"]
 
 
 # Placement points table (1st .. 20th).
@@ -270,6 +270,43 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "mp_win_penalty": 0.14,
         "mp_kill_penalty": 0.06,
         "mp_pressure_lost_kill_multiplier": 1.30,
+    },
+    "global": {
+        # Cross-regional Global Finals lobbies (Y4 Split 1/Split 2 Playoffs
+        # Finals, 2025 Championship, 2025 Midseason Playoffs Finals — 4
+        # events, 36 matches total). Strength variance reflects worldwide
+        # team distribution, not within-region parity: observed p20 = 0.08
+        # kills/match (vs 0.56-1.60 for regional finals) signals that the
+        # bottom of a cross-regional lobby is wiped quickly, which requires
+        # a larger strength_sigma than any regional preset.
+        # Cycle 13 (2026-05): SEED values only. Mid-range across the four
+        # regional cycle-9 presets, with strength_sigma bumped to 0.45 to
+        # reflect cross-regional variance. To be replaced by Bayesian fit
+        # output from tools/fit_region_presets.py --region global.
+        # Observed targets: mean_end ≈ 9.0 (rough), p1 9.47, p20 0.08,
+        # kills/match 57.47.
+        "strength_sigma": 0.45,
+        "rank_beta": 0.95,
+        "kill_beta": 0.80,
+        "win_beta": 0.80,
+        "consistency_beta": 0.42,
+        "placement_fight_correlation": 0.55,
+        "placement_win_correlation": 0.45,
+        "base_match_noise": 0.85,
+        "volatility_mean": 1.00,
+        "volatility_sigma": 0.25,
+        "respawn_model": "negbin",
+        "respawn_mean": 7.5,
+        "respawn_dispersion": 3.5,
+        "neutral_death_rate": 0.03,
+        "lost_kill_rate": 0.07,
+        "transfer_kill_rate": 0.05,
+        "revive_knock_mean": 9.0,
+        "placement_kill_sharpness": 0.90,
+        "mp_pressure_enabled": True,
+        "mp_win_penalty": 0.14,
+        "mp_kill_penalty": 0.05,
+        "mp_pressure_lost_kill_multiplier": 1.25,
     },
 }
 
