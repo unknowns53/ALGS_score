@@ -1,6 +1,6 @@
 # 等戦力ベースラインからのパラメータ感度スイープ (V2: 等間隔)
 
-ALGS Match Point Finals シミュレータを `strength_sigma=0.05` の「ほぼ拮抗」ベースラインで固定し、16 個の連続値パラメータについて 5 段階を **ベース値を中央 (level3) に置き等間隔** で振った結果 (strength_sigma のみベース値が小さく対称な負側を取れないため、ベースを level1 とした片側等間隔スイープ)。3 個の対照条件 (categorical) も並記。全条件 10000 sims, seed=42, workers=auto。生成: `tools/build_sweep_table.py`。
+ALGS Match Point Finals シミュレータを `strength_sigma=0.05` の「ほぼ拮抗」ベースラインで固定し、16 個の連続値パラメータについて 5 段階を **ベース値を中央 (level3) に置き等間隔** で振った結果 (strength_sigma のみベース値が小さく対称な負側を取れないため、ベースを level1 とした片側等間隔スイープ)。3 個の対照条件 (categorical) も並記。全条件 10000 sims, seed=42, workers=auto。生成: `tools/build_sweep_table.py --mode equal`。
 
 ## ベースライン (sweep_equal_base.json)
 

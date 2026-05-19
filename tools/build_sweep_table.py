@@ -1,7 +1,16 @@
-"""Aggregate out/sweep_eq_*.json (V2: base-centered, evenly-spaced) into docs."""
+"""Aggregate out/sweep_eq_*.json or sweep_tilt30_*.json into docs.
+
+Modes (selected via `--mode`):
+  - equal  : reads sweep_equal_base.json + sweep_eq_*.json (legacy default).
+             Writes docs/sweep_equal_baseline.md. 16 parameters.
+  - tilt30 : reads sweep_tilt30_base.json + sweep_tilt30_*.json. Writes
+             docs/sweep_tilt30_baseline.md. 12 parameters (main 5 + the
+             "no-effect at equal" 7), pinned to strength_sigma=0.30.
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -11,6 +20,9 @@ DOCS_DIR = REPO / "docs"
 
 BASE_PATH = OUT_DIR / "sweep_equal_base.json"
 TARGET_MD = DOCS_DIR / "sweep_equal_baseline.md"
+
+TILT30_BASE_PATH = OUT_DIR / "sweep_tilt30_base.json"
+TILT30_TARGET_MD = DOCS_DIR / "sweep_tilt30_baseline.md"
 
 # param_name -> (base_value, [(value, filename, is_base), ...])
 #
@@ -169,6 +181,102 @@ SWEEP_DEFINITIONS: dict[str, tuple[float, list[tuple[float, str, bool]]]] = {
     ]),
 }
 
+# Tilted-baseline definitions: same level values where applicable so the
+# tilt-mode tables sit beside the equal-mode tables apples-to-apples. The
+# strength_sigma sweep becomes symmetric around 0.30 (instead of the equal-
+# mode one-sided sweep from 0.05). MP-brother / chaos / transfer_kill /
+# neutral_death / revive_knock are intentionally omitted — section 5/6 of the
+# article doesn't need them re-evaluated under tilt.
+SWEEP_DEFINITIONS_TILT30: dict[str, tuple[float, list[tuple[float, str, bool]]]] = {
+    # --- main 5 ---
+    "strength_sigma": (0.30, [
+        (0.10, "sweep_tilt30_strength_sigma_lvl1.json", False),
+        (0.20, "sweep_tilt30_strength_sigma_lvl2.json", False),
+        (0.30, "sweep_tilt30_base.json", True),
+        (0.40, "sweep_tilt30_strength_sigma_lvl4.json", False),
+        (0.50, "sweep_tilt30_strength_sigma_lvl5.json", False),
+    ]),
+    "lost_kill_rate": (0.06, [  # delta = 0.03
+        (0.00, "sweep_tilt30_lost_kill_rate_lvl1.json", False),
+        (0.03, "sweep_tilt30_lost_kill_rate_lvl2.json", False),
+        (0.06, "sweep_tilt30_base.json", True),
+        (0.09, "sweep_tilt30_lost_kill_rate_lvl4.json", False),
+        (0.12, "sweep_tilt30_lost_kill_rate_lvl5.json", False),
+    ]),
+    "respawn_mean": (6.0, [  # delta = 2.0
+        (2.0, "sweep_tilt30_respawn_mean_lvl1.json", False),
+        (4.0, "sweep_tilt30_respawn_mean_lvl2.json", False),
+        (6.0, "sweep_tilt30_base.json", True),
+        (8.0, "sweep_tilt30_respawn_mean_lvl4.json", False),
+        (10.0, "sweep_tilt30_respawn_mean_lvl5.json", False),
+    ]),
+    "mp_win_penalty": (0.10, [  # delta = 0.05
+        (0.00, "sweep_tilt30_mp_win_penalty_lvl1.json", False),
+        (0.05, "sweep_tilt30_mp_win_penalty_lvl2.json", False),
+        (0.10, "sweep_tilt30_base.json", True),
+        (0.15, "sweep_tilt30_mp_win_penalty_lvl4.json", False),
+        (0.20, "sweep_tilt30_mp_win_penalty_lvl5.json", False),
+    ]),
+    "placement_kill_sharpness": (1.0, [  # delta = 0.5
+        (0.00, "sweep_tilt30_placement_kill_sharpness_lvl1.json", False),
+        (0.50, "sweep_tilt30_placement_kill_sharpness_lvl2.json", False),
+        (1.00, "sweep_tilt30_base.json", True),
+        (1.50, "sweep_tilt30_placement_kill_sharpness_lvl4.json", False),
+        (2.00, "sweep_tilt30_placement_kill_sharpness_lvl5.json", False),
+    ]),
+
+    # --- "no-effect at equal" 7 ---
+    "win_beta": (0.80, [  # delta = 0.25
+        (0.30, "sweep_tilt30_win_beta_lvl1.json", False),
+        (0.55, "sweep_tilt30_win_beta_lvl2.json", False),
+        (0.80, "sweep_tilt30_base.json", True),
+        (1.05, "sweep_tilt30_win_beta_lvl4.json", False),
+        (1.30, "sweep_tilt30_win_beta_lvl5.json", False),
+    ]),
+    "placement_win_correlation": (0.50, [  # delta = 0.20
+        (0.10, "sweep_tilt30_place_win_corr_lvl1.json", False),
+        (0.30, "sweep_tilt30_place_win_corr_lvl2.json", False),
+        (0.50, "sweep_tilt30_base.json", True),
+        (0.70, "sweep_tilt30_place_win_corr_lvl4.json", False),
+        (0.90, "sweep_tilt30_place_win_corr_lvl5.json", False),
+    ]),
+    "base_match_noise": (0.80, [  # delta = 0.20
+        (0.40, "sweep_tilt30_base_noise_lvl1.json", False),
+        (0.60, "sweep_tilt30_base_noise_lvl2.json", False),
+        (0.80, "sweep_tilt30_base.json", True),
+        (1.00, "sweep_tilt30_base_noise_lvl4.json", False),
+        (1.20, "sweep_tilt30_base_noise_lvl5.json", False),
+    ]),
+    "volatility_mean": (1.0, [  # delta = 0.2
+        (0.6, "sweep_tilt30_volatility_mean_lvl1.json", False),
+        (0.8, "sweep_tilt30_volatility_mean_lvl2.json", False),
+        (1.0, "sweep_tilt30_base.json", True),
+        (1.2, "sweep_tilt30_volatility_mean_lvl4.json", False),
+        (1.4, "sweep_tilt30_volatility_mean_lvl5.json", False),
+    ]),
+    "rank_beta": (1.0, [  # delta = 0.3
+        (0.4, "sweep_tilt30_rank_beta_lvl1.json", False),
+        (0.7, "sweep_tilt30_rank_beta_lvl2.json", False),
+        (1.0, "sweep_tilt30_base.json", True),
+        (1.3, "sweep_tilt30_rank_beta_lvl4.json", False),
+        (1.6, "sweep_tilt30_rank_beta_lvl5.json", False),
+    ]),
+    "kill_beta": (0.8, [  # delta = 0.2
+        (0.4, "sweep_tilt30_kill_beta_lvl1.json", False),
+        (0.6, "sweep_tilt30_kill_beta_lvl2.json", False),
+        (0.8, "sweep_tilt30_base.json", True),
+        (1.0, "sweep_tilt30_kill_beta_lvl4.json", False),
+        (1.2, "sweep_tilt30_kill_beta_lvl5.json", False),
+    ]),
+    "respawn_dispersion": (4.0, [  # delta = 1.0
+        (2.0, "sweep_tilt30_respawn_disp_lvl1.json", False),
+        (3.0, "sweep_tilt30_respawn_disp_lvl2.json", False),
+        (4.0, "sweep_tilt30_base.json", True),
+        (5.0, "sweep_tilt30_respawn_disp_lvl4.json", False),
+        (6.0, "sweep_tilt30_respawn_disp_lvl5.json", False),
+    ]),
+}
+
 # (section_id, title, [param_name]).
 # mp_win_penalty intentionally appears in both "main4" and "mp_brothers".
 SECTIONS: list[tuple[str, str, list[str]]] = [
@@ -189,6 +297,20 @@ SECTIONS: list[tuple[str, str, list[str]]] = [
     ("telemetry_only",
      "参考資料 (3): テレメトリのみ (スコア計算には渡らないので不動の予想)",
      ["revive_knock_mean"]),
+]
+
+# Section layout for the tilt30 table. The "no-effect at equal" 7 are kept as
+# a single bucket here — the article rewrite will split them into "revived"
+# vs "still quiet" based on the actual tilt30 numbers, but the table builder
+# stays neutral.
+SECTIONS_TILT30: list[tuple[str, str, list[str]]] = [
+    ("main5", "主要 5 要因 (tilted-strength でも一次効果が支配的)",
+     ["strength_sigma", "lost_kill_rate", "respawn_mean", "mp_win_penalty",
+      "placement_kill_sharpness"]),
+    ("equal_no_effect_7",
+     "等戦力では不動だった 7 (tilt で活性化する/しないを判定)",
+     ["rank_beta", "kill_beta", "win_beta", "placement_win_correlation",
+      "base_match_noise", "volatility_mean", "respawn_dispersion"]),
 ]
 
 # (display_label, filename, short_description)
@@ -239,8 +361,10 @@ def format_param_value(param: str, value: float) -> str:
     return f"{value:.2f}"
 
 
-def build_param_table(param: str) -> str:
-    base_value, rows = SWEEP_DEFINITIONS[param]
+def build_param_table(param: str, definitions=None) -> str:
+    if definitions is None:
+        definitions = SWEEP_DEFINITIONS
+    base_value, rows = definitions[param]
     header = "| value | " + " | ".join(name for _, name, _ in METRIC_COLUMNS) + " |"
     sep = "|---" + "|---" * len(METRIC_COLUMNS) + "|"
     lines = [f"#### `{param}` (baseline = {format_param_value(param, base_value)})",
@@ -264,10 +388,12 @@ def build_param_table(param: str) -> str:
     return "\n".join(lines)
 
 
-def build_baseline_section() -> str:
-    if not BASE_PATH.exists():
-        return "_(baseline file missing: out/sweep_equal_base.json)_\n"
-    data = load_json(BASE_PATH)
+def build_baseline_section(base_path: Path | None = None) -> str:
+    if base_path is None:
+        base_path = BASE_PATH
+    if not base_path.exists():
+        return f"_(baseline file missing: out/{base_path.name})_\n"
+    data = load_json(base_path)
     rows = [
         f"- n_sims: **{data.get('n_sims')}**",
         f"- region_profile: `{data.get('region_profile')}`",
@@ -282,12 +408,14 @@ def build_baseline_section() -> str:
     return "\n".join(rows) + "\n"
 
 
-def build_overview_table() -> str:
+def build_overview_table(definitions=None) -> str:
     """Compact overview: each sweep's mean across levels side by side."""
+    if definitions is None:
+        definitions = SWEEP_DEFINITIONS
     header = "| param | levels (low -> high) | mean range |"
     sep = "|---|---|---|"
     lines = [header, sep]
-    for param, (base_value, rows) in SWEEP_DEFINITIONS.items():
+    for param, (base_value, rows) in definitions.items():
         means = []
         for value, filename, _ in rows:
             path = OUT_DIR / filename
@@ -301,10 +429,12 @@ def build_overview_table() -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_categorical_section() -> str:
-    if not BASE_PATH.exists():
+def build_categorical_section(base_path: Path | None = None) -> str:
+    if base_path is None:
+        base_path = BASE_PATH
+    if not base_path.exists():
         return ""
-    base_data = load_json(BASE_PATH)
+    base_data = load_json(base_path)
     header = ("| condition | mean | median | P(>10) | first MP | elig@end "
               "| scored kills | description |")
     sep = "|---|---|---|---|---|---|---|---|"
@@ -340,35 +470,74 @@ def build_categorical_section() -> str:
     return "\n".join(lines) + "\n"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mode", choices=["equal", "tilt30"], default="equal",
+                        help="どのスイープ集合を集計するか (default: equal)")
+    args = parser.parse_args(argv)
+
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
-    parts: list[str] = []
-    parts.append("# 等戦力ベースラインからのパラメータ感度スイープ (V2: 等間隔)\n")
-    parts.append(
-        "ALGS Match Point Finals シミュレータを `strength_sigma=0.05` の「ほぼ拮抗」"
-        "ベースラインで固定し、16 個の連続値パラメータについて 5 段階を "
-        "**ベース値を中央 (level3) に置き等間隔** で振った結果 (strength_sigma "
-        "のみベース値が小さく対称な負側を取れないため、ベースを level1 とした片側"
-        "等間隔スイープ)。3 個の対照条件 (categorical) も並記。全条件 10000 sims, "
-        "seed=42, workers=auto。生成: `tools/build_sweep_table.py`。\n"
-    )
+    if args.mode == "equal":
+        definitions = SWEEP_DEFINITIONS
+        sections = SECTIONS
+        base_path = BASE_PATH
+        target_md = TARGET_MD
+        include_categorical = True
+        header_title = ("# 等戦力ベースラインからのパラメータ感度スイープ "
+                        "(V2: 等間隔)\n")
+        header_blurb = (
+            "ALGS Match Point Finals シミュレータを `strength_sigma=0.05` の"
+            "「ほぼ拮抗」ベースラインで固定し、16 個の連続値パラメータについて "
+            "5 段階を **ベース値を中央 (level3) に置き等間隔** で振った結果 "
+            "(strength_sigma のみベース値が小さく対称な負側を取れないため、"
+            "ベースを level1 とした片側等間隔スイープ)。3 個の対照条件 "
+            "(categorical) も並記。全条件 10000 sims, seed=42, workers=auto。"
+            "生成: `tools/build_sweep_table.py --mode equal`。\n"
+        )
+        baseline_section_title = "## ベースライン (sweep_equal_base.json)\n"
+    else:
+        definitions = SWEEP_DEFINITIONS_TILT30
+        sections = SECTIONS_TILT30
+        base_path = TILT30_BASE_PATH
+        target_md = TILT30_TARGET_MD
+        include_categorical = False
+        header_title = ("# Tilted ベースライン (strength_sigma=0.30) からの "
+                        "パラメータ感度スイープ\n")
+        header_blurb = (
+            "等戦力ベース (strength_sigma=0.05) の評価では一次効果が見えにくい"
+            "戦力モデル直接の係数群を、現実的な戦力傾斜 strength_sigma=0.30 "
+            "(cycle 13 で pin した article 第 2-6 節の改稿基準) の下で再評価"
+            "した結果。12 パラメータ = 主要 5 (strength_sigma / lost_kill_rate"
+            " / respawn_mean / mp_win_penalty / placement_kill_sharpness) + "
+            "「等戦力では不動」7 (rank_beta / kill_beta / win_beta / "
+            "placement_win_correlation / base_match_noise / volatility_mean "
+            "/ respawn_dispersion) を各 5 段階 (ベース level3 を中央に等間隔)。"
+            "全条件 10000 sims, seed=42, workers=0。生成: "
+            "`tools/build_sweep_table.py --mode tilt30`。\n"
+        )
+        baseline_section_title = "## ベースライン (sweep_tilt30_base.json)\n"
 
-    parts.append("## ベースライン (sweep_equal_base.json)\n")
-    parts.append(build_baseline_section())
+    parts: list[str] = []
+    parts.append(header_title)
+    parts.append(header_blurb)
+
+    parts.append(baseline_section_title)
+    parts.append(build_baseline_section(base_path))
 
     parts.append("\n## 全パラメータ概観 (mean of ending match across levels)\n")
-    parts.append(build_overview_table())
+    parts.append(build_overview_table(definitions))
 
-    for section_id, title, params in SECTIONS:
+    for section_id, title, params in sections:
         parts.append(f"\n## {title}\n")
         for param in params:
-            if param not in SWEEP_DEFINITIONS:
+            if param not in definitions:
                 continue
-            parts.append(build_param_table(param))
+            parts.append(build_param_table(param, definitions))
 
-    parts.append("\n## 対照条件 (categorical, single-row)\n")
-    parts.append(build_categorical_section())
+    if include_categorical:
+        parts.append("\n## 対照条件 (categorical, single-row)\n")
+        parts.append(build_categorical_section(base_path))
 
     parts.append(
         "\n## 列定義\n"
@@ -380,8 +549,8 @@ def main() -> int:
     )
 
     text = "\n".join(parts)
-    TARGET_MD.write_text(text, encoding="utf-8")
-    print(f"wrote: {TARGET_MD}")
+    target_md.write_text(text, encoding="utf-8")
+    print(f"wrote: {target_md}")
     return 0
 
 

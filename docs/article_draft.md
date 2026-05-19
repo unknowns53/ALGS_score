@@ -365,6 +365,11 @@ note 投稿時は各 PNG を個別アップロードして該当箇所に差し�
   3. **第 2 部全体 (第 2〜6 節) リライト**: 第 2 節「ベース分布」も傾斜下版に差し替え (図 1 を `plot_tilt_base_distribution.png` に) + 「ポイント制度自体が傾斜を作る」観察を組み込み (等戦力でも 1st=63p / 20th=12p、図 or 表 1 つ)、第 3 節「主要 5 要因」を傾斜下数値で書き直し、subsection 順序が変わる可能性も考慮 (rank_beta が ±0.6 で大きい)、第 4 節 PKF subsection と respawn_mean subsection も数値更新、第 5 節「効かない 7 個」リストを傾斜下評価に更新 (戦力モデル直結 4 つはリストから外す or 「効くがシミュレータ係数」として別整理、respawn_dispersion はリストに残す、base_match_noise/volatility_mean は中間としてどう扱うか判断)、第 6 節「対照条件」も傾斜下で再評価
   4. **Part 2 (フィッティング編) との接続整理**: (a) 傾斜下で復活した 4 つ (rank_beta 等) は「Apex のシミュレータ変換係数であってゲーム制度ではない」ため、地域間で動く理由が乏しい → Part 2 の fit 対象に含めない判断の根拠として明示。第 7 節 (Part 2) 冒頭でこの伏線を回収。(b) Bayesian full run の結果が ss > 0.4 の地域を出してきたら「世界大会レベルでもありえない値」として観測ターゲット再設計の引き金に。fit 結果の妥当性検証セクションを Part 2 内に新設
   5. **Part 1 (note 公開分) との同期**: 鷹栖くん編集中の `article_draft_note.md` も第 2 部全体が書き換わる。同期作業は note 公開直前に著者側で実施
+- 実装ログ (タスク 1-2 完了、2026-05-19 同セッション後半):
+  - `tools/run_tilted_sweep_tilt30.ps1` を新規追加し、49 conditions (1 base + 12 params × 4 levels) を ss=0.30 ベースで実行 (10000 sims × 49、所要 12 分 41 秒)。strength_sigma の対称 sweep は argparse の last-wins で BaseArgs を上書き
+  - `tools/build_sweep_table.py` と `tools/plot_equal_sweep.py` に `--mode {equal,tilt30}` を追加。tilt30 mode は `docs/sweep_tilt30_baseline.md` と `out/plot_tilt30_sweep_*.png` (12 枚) を生成。equal mode の出力は CLI 注記 1 行差分以外は不変 (regression OK)
+  - 「等戦力では不動」7 の tilt30 split (Δ = 終了試合数 mean の max-min): 活性化 4 = rank_beta (0.84), kill_beta (0.28), win_beta (0.27), placement_win_correlation (0.21) はいずれも戦力モデル直接係数 / 不動継続 3 = base_match_noise (0.12), volatility_mean (0.12), respawn_dispersion (0.06) はノイズ・分散係数。サイクル境界が綺麗に「戦力モデル直結 vs ノイズ系」で割れた
+  - 注目すべき発見: rank_beta の Δ=0.84 は main 5 中の lost_kill_rate (Δ=0.46) や respawn_mean (Δ=0.38) より大きい。第 5 節リライト時には「効かない 7」を「ゲーム制度ではなくシミュレータ係数として効く 4」と「ノイズ系として実質不動の 3」に二分する整理が自然。参考用 ss=0.35 sweep 結果 (Commit `6450260`) と qualitative trend が一致し、ベースを 0.30 に下げても結論は同方向
 - 妥当性確認データ (出典: 2026-05-19 セッション内 sim):
 
   | rank | ss=0.05 | ss=0.20 | ss=0.27 | ss=0.30 (採用) | ss=0.35 | ss=0.50 |
