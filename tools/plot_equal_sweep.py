@@ -1,7 +1,12 @@
-"""Generate one overlay PNG per swept parameter (5 series each)."""
+"""Generate one overlay PNG per swept parameter (5 series each).
+
+`--mode equal`  : reads SWEEP_DEFINITIONS, writes plot_equal_sweep_*.png
+`--mode tilt30` : reads SWEEP_DEFINITIONS_TILT30, writes plot_tilt30_sweep_*.png
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -13,6 +18,7 @@ from matplotlib import rcParams
 # Reuse the same definitions as the table builder.
 from build_sweep_table import (  # type: ignore
     SWEEP_DEFINITIONS,
+    SWEEP_DEFINITIONS_TILT30,
     OUT_DIR,
     format_param_value,
 )
@@ -30,7 +36,8 @@ def load_json(path: Path) -> dict:
 
 
 def plot_param(param: str, base_value: float,
-               rows: list[tuple[float, str, bool]]) -> Path | None:
+               rows: list[tuple[float, str, bool]],
+               mode: str = "equal") -> Path | None:
     fig, ax = plt.subplots(figsize=(9.0, 5.4), dpi=140)
 
     plotted = 0
@@ -70,8 +77,10 @@ def plot_param(param: str, base_value: float,
 
     ax.set_xlabel("Ending match")
     ax.set_ylabel("Probability")
+    title_prefix = ("Equal-baseline sweep" if mode == "equal"
+                    else "Tilted-baseline (ss=0.30) sweep")
     ax.set_title(
-        f"Equal-baseline sweep: {param} "
+        f"{title_prefix}: {param} "
         f"(baseline {format_param_value(param, base_value)})"
     )
     ax.grid(True, linestyle=":", alpha=0.4)
@@ -79,16 +88,25 @@ def plot_param(param: str, base_value: float,
     ax.set_ylim(bottom=0)
     fig.tight_layout()
 
-    out_path = OUT_DIR / f"plot_equal_sweep_{param}.png"
+    out_prefix = "plot_equal_sweep" if mode == "equal" else "plot_tilt30_sweep"
+    out_path = OUT_DIR / f"{out_prefix}_{param}.png"
     fig.savefig(out_path)
     plt.close(fig)
     return out_path
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mode", choices=["equal", "tilt30"], default="equal",
+                        help="どのスイープ集合を描くか (default: equal)")
+    args = parser.parse_args(argv)
+
+    definitions = (SWEEP_DEFINITIONS if args.mode == "equal"
+                   else SWEEP_DEFINITIONS_TILT30)
+
     written = []
-    for param, (base_value, rows) in SWEEP_DEFINITIONS.items():
-        path = plot_param(param, base_value, rows)
+    for param, (base_value, rows) in definitions.items():
+        path = plot_param(param, base_value, rows, mode=args.mode)
         if path is not None:
             print(f"wrote: {path}")
             written.append(path)

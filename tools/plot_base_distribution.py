@@ -1,13 +1,19 @@
-"""Render the equal-strength baseline ending-match distribution as a single PNG.
+"""Render the baseline ending-match distribution as a single PNG.
 
 Companion to tools/plot_equal_sweep.py (which produces overlay sweeps).
 This one shows the standalone baseline as a bar chart, annotated with
 mean, median, and tail probabilities so it can be dropped into the
 article as the "what does the baseline look like" figure.
+
+`--mode equal`  : strength_sigma=0.05 baseline (sweep_equal_base.json)
+                  -> plot_equal_sweep_base.png
+`--mode tilt30` : strength_sigma=0.30 baseline (sweep_tilt30_base.json)
+                  -> plot_tilt30_base.png
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -22,8 +28,24 @@ rcParams["axes.unicode_minus"] = False
 OUT = Path(__file__).resolve().parent.parent / "out"
 
 
-def main() -> int:
-    with (OUT / "sweep_equal_base.json").open("r", encoding="utf-8") as f:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mode", choices=["equal", "tilt30"], default="equal",
+                        help="どのベースラインを描くか (default: equal)")
+    args = parser.parse_args(argv)
+
+    if args.mode == "equal":
+        src_name = "sweep_equal_base.json"
+        out_name = "plot_equal_sweep_base.png"
+        title_sigma = "0.05"
+        title_qualifier = "equal-strength lobby"
+    else:
+        src_name = "sweep_tilt30_base.json"
+        out_name = "plot_tilt30_base.png"
+        title_sigma = "0.30"
+        title_qualifier = "tilted lobby"
+
+    with (OUT / src_name).open("r", encoding="utf-8") as f:
         data = json.load(f)
 
     dist = data["ending_match_distribution"]
@@ -56,8 +78,8 @@ def main() -> int:
     ax.set_xlabel("Ending match")
     ax.set_ylabel("Probability (%)")
     ax.set_title(
-        "Baseline ending-match distribution "
-        "(equal-strength lobby, strength_sigma=0.05, 10000 sims)"
+        f"Baseline ending-match distribution "
+        f"({title_qualifier}, strength_sigma={title_sigma}, 10000 sims)"
     )
     ax.set_xticks(matches)
     ax.set_ylim(0, ymax * 1.18)
@@ -86,7 +108,7 @@ def main() -> int:
                 fontsize=8.5, color="#1F2937")
 
     fig.tight_layout()
-    out_path = OUT / "plot_equal_sweep_base.png"
+    out_path = OUT / out_name
     fig.savefig(out_path, facecolor="white")
     plt.close(fig)
     print(f"wrote: {out_path}")
