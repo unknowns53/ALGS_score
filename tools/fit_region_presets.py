@@ -499,6 +499,23 @@ def bayesian_search_region(
     return records
 
 
+def _fit_region_bayes_worker(args):
+    """multiprocessing entry point: fit one region under bayesian method.
+
+    Cycle 13 (2026-05): added so --parallel-regions can run N region
+    bayesian fits in parallel processes. gp_minimize itself is sequential
+    inside one region, so the only available parallelism is across
+    regions. Each worker spends ~ (n_calls * sims/eval) compute on
+    its own process; with 5 regions on a 16+ thread CPU the wall time
+    drops from N x T to ~ T.
+    """
+    region, observed, space, sims, seed, n_calls, n_initial = args
+    scored = bayesian_search_region(
+        region, observed, space, sims, seed, n_calls, n_initial,
+    )
+    return region, scored
+
+
 # ---------------------------------------------------------------------------
 # Proposal-table writer
 # ---------------------------------------------------------------------------
@@ -667,8 +684,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="CSV of per-match per-placement kills."
     )
     p.add_argument(
-        "--regions", default="americas,emea,apac_n,apac_s",
+        "--regions", default="americas,emea,apac_n,apac_s,global",
         help="comma-separated region names to fit."
+    )
+    p.add_argument(
+        "--parallel-regions", action="store_true",
+        help="run bayesian fits for multiple regions in parallel "
+             "(one process per region). Ignored under --method grid "
+             "(grid already parallelizes per-config inside one region)."
     )
     p.add_argument("--sims", type=int, default=2000,
                    help="tournaments per grid condition.")
@@ -708,7 +731,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 # to a per-run filename so the canonical file's cycle-9 contents are
 # never silently clobbered. Pass --output-md explicitly to override.
 DEFAULT_OUTPUT_MD = "docs/region_refit_proposal.md"
-CANONICAL_REGION_SET = ("americas", "apac_n", "apac_s", "emea")
+CANONICAL_REGION_SET = ("americas", "apac_n", "apac_s", "emea", "global")
+# Default --regions value advertised in --help. Cycle 13 (2026-05)
+# expanded the canonical set from 4 to 5 by adding cross-regional
+# Global Finals as a sigma-distinct lobby.
+CANONICAL_REGIONS_CSV = ",".join(CANONICAL_REGION_SET)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -717,20 +744,30 @@ def main(argv: list[str] | None = None) -> int:
     csv_path = REPO_ROOT / ns.observations
     regions = [r.strip() for r in ns.regions.split(",") if r.strip()]
 
-    # Side-effect guard: if --output-md is at its default and --regions
-    # is anything other than the canonical 4-region set, redirect to a
-    # per-region path. Otherwise a single-region run would replace the
-    # canonical proposal with a one-line table.
+    # Side-effect guard for the canonical proposal file (cycle 13:
+    # docs/region_refit_proposal.md represents the 5-region cycle-13
+    # production fit). Two paths redirect away from canonical:
+    #   1. --dry-run: results are by definition throwaway; never let a
+    #      smoke test silently overwrite the real proposal.
+    #   2. --regions != canonical set: a partial-region run would
+    #      replace the full table with a one-line subset.
+    # Pass --output-md explicitly to override either redirect.
     output_md_arg = ns.output_md
-    if (output_md_arg == DEFAULT_OUTPUT_MD
-            and tuple(sorted(regions)) != CANONICAL_REGION_SET):
-        suffix = "_".join(sorted(regions))
-        output_md_arg = f"docs/region_refit_proposal__{suffix}.md"
-        print(
-            f"  [guard] --regions != canonical set; redirecting --output-md "
-            f"to {output_md_arg} to protect {DEFAULT_OUTPUT_MD}",
-            flush=True,
-        )
+    if output_md_arg == DEFAULT_OUTPUT_MD:
+        redirect_reason: str | None = None
+        if ns.dry_run:
+            output_md_arg = "docs/region_refit_proposal__dryrun.md"
+            redirect_reason = "--dry-run output is non-production"
+        elif tuple(sorted(regions)) != CANONICAL_REGION_SET:
+            suffix = "_".join(sorted(regions))
+            output_md_arg = f"docs/region_refit_proposal__{suffix}.md"
+            redirect_reason = "--regions != canonical set"
+        if redirect_reason:
+            print(
+                f"  [guard] {redirect_reason}; redirecting --output-md "
+                f"to {output_md_arg} to protect {DEFAULT_OUTPUT_MD}",
+                flush=True,
+            )
     out_md = REPO_ROOT / output_md_arg
 
     sims = max(100, ns.sims) if not ns.dry_run else min(ns.sims, 200)
@@ -780,7 +817,8 @@ def main(argv: list[str] | None = None) -> int:
           f"dry_run={ns.dry_run}")
     print(f"  fit params ({len(search_keys)}): {', '.join(search_keys)}")
 
-    proposals: dict[str, dict] = {}
+    # Stage 1: build per-region job list (skip regions with no obs).
+    jobs: list[tuple[str, dict, dict]] = []  # (region, observed, kills_meta)
     for region in regions:
         if region not in OBSERVED_MEAN_END_MATCH:
             print(f"  [{region}] skip: no observed mean_end_match", flush=True)
@@ -804,15 +842,52 @@ def main(argv: list[str] | None = None) -> int:
             "p20_kills": kills["p20_kills"],
             "kills_per_match": kills["kills_per_match"],
         }
-        if ns.method == "grid":
-            scored = grid_search_region(
-                region, observed, grid, sims, workers, ns.seed,
-            )
-        else:
-            scored = bayesian_search_region(
-                region, observed, SEARCH_SPACE_BAYES, sims, ns.seed,
-                bayes_meta["n_calls"], bayes_meta["n_initial"],
-            )
+        jobs.append((region, observed, kills))
+
+    # Stage 2: execute fits (parallel if requested, else sequential).
+    use_parallel = (
+        ns.parallel_regions
+        and ns.method == "bayesian"
+        and len(jobs) > 1
+    )
+    region_to_scored: dict[str, list] = {}
+    if use_parallel:
+        pool_size = min(len(jobs), mp.cpu_count() or 1)
+        print(
+            f"  [parallel] fitting {len(jobs)} regions across "
+            f"{pool_size} worker processes (bayesian, "
+            f"n_calls={bayes_meta['n_calls']} each)",
+            flush=True,
+        )
+        worker_args = [
+            (region, observed, SEARCH_SPACE_BAYES, sims, ns.seed,
+             bayes_meta["n_calls"], bayes_meta["n_initial"])
+            for region, observed, _ in jobs
+        ]
+        with mp.Pool(pool_size) as pool:
+            for region_done, scored in pool.imap_unordered(
+                _fit_region_bayes_worker, worker_args
+            ):
+                region_to_scored[region_done] = scored
+                print(f"  [parallel] {region_done} done "
+                      f"({len(region_to_scored)}/{len(jobs)})", flush=True)
+    else:
+        for region, observed, _ in jobs:
+            if ns.method == "grid":
+                scored = grid_search_region(
+                    region, observed, grid, sims, workers, ns.seed,
+                )
+            else:
+                scored = bayesian_search_region(
+                    region, observed, SEARCH_SPACE_BAYES, sims, ns.seed,
+                    bayes_meta["n_calls"], bayes_meta["n_initial"],
+                )
+            region_to_scored[region] = scored
+
+    # Stage 3: build proposals dict and log best for each region.
+    proposals: dict[str, dict] = {}
+    for region, observed, kills in jobs:
+        scored = region_to_scored[region]
         best_ov, best_metrics, best_err = scored[0]
         proposals[region] = {
             "overrides": best_ov,
