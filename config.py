@@ -303,7 +303,8 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # current normal-distribution team-strength model cannot
         # represent the actual global lobby distribution.
         #
-        # Global Finals are invitation-only (region top ~3 each), so
+        # Global Finals has the top 10 teams from winners bracket and 
+        # the 10 from elimination bracket 2, so
         # the underlying strength distribution is a top-cluster (~all
         # elites, narrow with a thin tail) rather than a wide normal.
         # bayesian gp_minimize pushed sigma to the upper bound trying
