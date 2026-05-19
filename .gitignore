@@ -39,4 +39,5 @@ out/*
 !out/article_tables/
 !out/plot_equal_sweep_*.png
 !out/plot_tilt30_sweep_*.png
+!out/plot_tilt30_base.png
 !out/plot_pkf_per_placement_kills.png

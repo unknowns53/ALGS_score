@@ -275,6 +275,22 @@ SWEEP_DEFINITIONS_TILT30: dict[str, tuple[float, list[tuple[float, str, bool]]]]
         (5.0, "sweep_tilt30_respawn_disp_lvl4.json", False),
         (6.0, "sweep_tilt30_respawn_disp_lvl5.json", False),
     ]),
+
+    # --- MP-brothers supplement (for article section 4) ---
+    "mp_kill_penalty": (0.05, [  # delta = 0.025
+        (0.000, "sweep_tilt30_mp_kill_penalty_lvl1.json", False),
+        (0.025, "sweep_tilt30_mp_kill_penalty_lvl2.json", False),
+        (0.05, "sweep_tilt30_base.json", True),
+        (0.075, "sweep_tilt30_mp_kill_penalty_lvl4.json", False),
+        (0.100, "sweep_tilt30_mp_kill_penalty_lvl5.json", False),
+    ]),
+    "mp_pressure_lost_kill_multiplier": (1.25, [  # delta = 0.25
+        (0.75, "sweep_tilt30_mp_pressure_lost_kill_mult_lvl1.json", False),
+        (1.00, "sweep_tilt30_mp_pressure_lost_kill_mult_lvl2.json", False),
+        (1.25, "sweep_tilt30_base.json", True),
+        (1.50, "sweep_tilt30_mp_pressure_lost_kill_mult_lvl4.json", False),
+        (1.75, "sweep_tilt30_mp_pressure_lost_kill_mult_lvl5.json", False),
+    ]),
 }
 
 # (section_id, title, [param_name]).
@@ -307,6 +323,9 @@ SECTIONS_TILT30: list[tuple[str, str, list[str]]] = [
     ("main5", "主要 5 要因 (tilted-strength でも一次効果が支配的)",
      ["strength_sigma", "lost_kill_rate", "respawn_mean", "mp_win_penalty",
       "placement_kill_sharpness"]),
+    ("mp_brothers_quiet",
+     "MP 圧力 3 兄弟 (mp_win_penalty 以外の 2 つは tilt 下でも不動)",
+     ["mp_kill_penalty", "mp_pressure_lost_kill_multiplier"]),
     ("equal_no_effect_7",
      "等戦力では不動だった 7 (tilt で活性化する/しないを判定)",
      ["rank_beta", "kill_beta", "win_beta", "placement_win_correlation",
