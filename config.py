@@ -139,15 +139,18 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
     "americas": {
         # Calibrated against 4 historical Americas Pro League finals
         # (2024 S1/S2, 2025 S1/S2): mean 7.50 games.
-        # Cycle 9 (2026-05): 4-parameter grid search (900 conditions x
-        # 2000 sims, 4-component normalized squared error) re-set
-        # strength_sigma=0.35, lost_kill_rate=0.04, PKF=0.60,
-        # respawn_mean=10.0. Sim 7.94 vs obs 7.50, err=0.0824. PKF and
-        # respawn_mean both pinned at grid edges (0.60 and 10.0); p1 kill
-        # gap remains (sim 6.86 vs obs 9.03) — Americas observation has
-        # uniquely high top-team kill volume that the grid can't reach
-        # without dropping PKF below 0.60 (which would lose meaning).
-        "strength_sigma": 0.35,
+        # Cycle 13 (2026-05): 5-component bayesian fit (gp_minimize,
+        # 150 calls x 2000 sims, --parallel-regions). Targets:
+        # mean_end, p1, p10, p20, total. Best:
+        #   sigma=0.288, lost_kill=0.020, PKF=0.71, respawn=12.0,
+        #   mp_win=0.000.
+        # sim mean_end=7.85 vs obs 7.50, p1=7.97 vs 9.03, p10=2.84 vs
+        # 2.37, p20=1.31 vs 1.60, total=65.61 vs 61.90. err=0.0931.
+        # respawn_mean and lost_kill_rate both at SEARCH_SPACE edges
+        # (12.0 upper / 0.020 lower) — Americas observation has the
+        # highest total-kill volume of all regions, which keeps the
+        # respawn-driven kill supply pushed to its bound.
+        "strength_sigma": 0.288,
         "rank_beta": 1.00,
         "kill_beta": 0.85,
         "win_beta": 0.85,
@@ -158,15 +161,15 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 0.95,
         "volatility_sigma": 0.20,
         "respawn_model": "negbin",
-        "respawn_mean": 10.0,
+        "respawn_mean": 12.0,
         "respawn_dispersion": 4.0,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.04,
+        "lost_kill_rate": 0.020,
         "transfer_kill_rate": 0.05,
         "revive_knock_mean": 13.0,
-        "placement_kill_sharpness": 0.60,
+        "placement_kill_sharpness": 0.71,
         "mp_pressure_enabled": True,
-        "mp_win_penalty": 0.11,
+        "mp_win_penalty": 0.000,
         "mp_kill_penalty": 0.04,
         "mp_pressure_lost_kill_multiplier": 1.15,
     },
@@ -175,12 +178,13 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # (2024 S1/S2, 2025 S1/S2): mean 8.50 games. EMEA is much more
         # contested than the "structured & low chaos" stereotype, so
         # parity is closer to APAC-N levels.
-        # Cycle 9 (2026-05): 4-parameter grid search (900 conditions x
-        # 2000 sims) re-set strength_sigma=0.27, lost_kill_rate=0.10
-        # (was 0.12, now interior), PKF=1.20, respawn_mean=6.0 (was 6.5).
-        # Best fit of all four regions: sim 8.49 vs obs 8.50, p1 9.82 vs
-        # 9.44, p20 0.57 vs 0.56, total 54.50 vs 56.50, err=0.0031.
-        "strength_sigma": 0.27,
+        # Cycle 13 (2026-05): 5-component bayesian fit. Best:
+        #   sigma=0.509, lost_kill=0.030, PKF=1.10, respawn=3.3,
+        #   mp_win=0.500.
+        # sim mean_end=7.96 vs obs 8.50, p1=9.70 vs 9.44, p10=2.03 vs
+        # 2.53, p20=0.60 vs 0.56, total=56.79 vs 56.50. err=0.0489.
+        # mp_win_penalty at upper edge (0.500); other params interior.
+        "strength_sigma": 0.509,
         "rank_beta": 0.95,
         "kill_beta": 0.80,
         "win_beta": 0.75,
@@ -191,28 +195,31 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 1.05,
         "volatility_sigma": 0.28,
         "respawn_model": "negbin",
-        "respawn_mean": 6.0,
+        "respawn_mean": 3.3,
         "respawn_dispersion": 3.5,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.10,
+        "lost_kill_rate": 0.030,
         "transfer_kill_rate": 0.05,
         "revive_knock_mean": 7.0,
-        "placement_kill_sharpness": 1.20,
+        "placement_kill_sharpness": 1.10,
         "mp_pressure_enabled": True,
-        "mp_win_penalty": 0.17,
+        "mp_win_penalty": 0.500,
         "mp_kill_penalty": 0.05,
         "mp_pressure_lost_kill_multiplier": 1.25,
     },
     "apac_n": {
         # Calibrated against 4 historical APAC North Pro League finals
         # (2024 S1/S2, 2025 S1/S2): mean 8.75 games.
-        # Cycle 9 (2026-05): 4-parameter grid search (900 conditions x
-        # 2000 sims) re-set strength_sigma=0.35, lost_kill_rate=0.04,
-        # PKF=1.00, respawn_mean=6.0 (was 7.0). sim 8.31 vs obs 8.75,
-        # p1 9.02 vs 9.97, p20 0.82 vs 0.80, total 58.53 vs 55.40,
-        # err=0.0154. APAC-N's long tournaments are driven by tighter
-        # parity (strength_sigma=0.35) rather than a flatter kill curve.
-        "strength_sigma": 0.35,
+        # Cycle 13 (2026-05): 5-component bayesian fit. Best:
+        #   sigma=0.445, lost_kill=0.020, PKF=1.00, respawn=8.5,
+        #   mp_win=0.500.
+        # sim mean_end=8.29 vs obs 8.75, p1=9.56 vs 9.97, p10=2.39 vs
+        # 3.51, p20=0.85 vs 0.80, total=62.30 vs 55.40. err=0.1252.
+        # APAC-N has the highest observed p10 (3.51) of all regions —
+        # the fit's residual is concentrated there (sim 2.39 = 68% of
+        # observed). lost_kill_rate=0.020 sits at the SEARCH_SPACE
+        # lower bound, mp_win_penalty=0.500 at the upper bound.
+        "strength_sigma": 0.445,
         "rank_beta": 0.85,
         "kill_beta": 0.75,
         "win_beta": 0.55,
@@ -223,15 +230,15 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 1.10,
         "volatility_sigma": 0.30,
         "respawn_model": "negbin",
-        "respawn_mean": 6.0,
+        "respawn_mean": 8.5,
         "respawn_dispersion": 3.0,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.04,
+        "lost_kill_rate": 0.020,
         "transfer_kill_rate": 0.06,
         "revive_knock_mean": 9.0,
         "placement_kill_sharpness": 1.00,
         "mp_pressure_enabled": True,
-        "mp_win_penalty": 0.15,
+        "mp_win_penalty": 0.500,
         "mp_kill_penalty": 0.05,
         "mp_pressure_lost_kill_multiplier": 1.35,
     },
@@ -239,16 +246,19 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # Calibrated against 4 historical APAC South Pro League finals
         # (2024 S1/S2, 2025 S1/S2): mean 8.00 games. Slightly shorter
         # than APAC-N, slightly longer than Americas.
-        # Cycle 9 (2026-05): 4-parameter grid search (900 conditions x
-        # 2000 sims, 27 matches available — 2024 S1 Games 6-10 and
-        # 2024 S2 Game 7 standings are missing in Liquipedia coverage)
-        # re-set strength_sigma=0.35 (was 0.27), lost_kill_rate=0.04,
-        # PKF=0.60, respawn_mean=10.0 (was 6.5). sim 8.20 vs obs 8.00,
-        # p1 6.73 vs 8.44, total 62.34 vs 50.52, err=0.1164. PKF and
-        # respawn_mean both pinned at grid edges; total-kills overshoot
-        # (62 vs 51) is the dominant residual — APAC-S's small sample
-        # mean is unusually low and the grid cannot fully accommodate it.
-        "strength_sigma": 0.35,
+        # Cycle 13 (2026-05): 5-component bayesian fit, using the
+        # apac_s data backfilled from Liquipedia wikitext in efe9597
+        # (200 + 140 rows, full top-20 coverage for both 2024 S1 and
+        # S2). Best:
+        #   sigma=0.610, lost_kill=0.091, PKF=1.05, respawn=9.6,
+        #   mp_win=0.500.
+        # sim mean_end=7.41 vs obs 8.00, p1=9.67 vs 9.22, p10=2.12 vs
+        # 2.69, p20=0.64 vs 0.59, total=58.04 vs 57.91. err=0.0569.
+        # mp_win_penalty at upper edge (0.500); other params interior.
+        # Total-kills overshoot from cycle 9 (62 vs 51 obs) resolved by
+        # the data backfill: full 2024 S1/S2 coverage lifted obs total
+        # from 50.5 to 57.9 (closer to APAC-N's 55.4).
+        "strength_sigma": 0.610,
         "rank_beta": 0.95,
         "kill_beta": 0.72,
         "win_beta": 0.85,
@@ -259,15 +269,15 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 0.98,
         "volatility_sigma": 0.25,
         "respawn_model": "negbin",
-        "respawn_mean": 10.0,
+        "respawn_mean": 9.6,
         "respawn_dispersion": 3.5,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.04,
+        "lost_kill_rate": 0.091,
         "transfer_kill_rate": 0.06,
         "revive_knock_mean": 7.0,
-        "placement_kill_sharpness": 0.60,
+        "placement_kill_sharpness": 1.05,
         "mp_pressure_enabled": True,
-        "mp_win_penalty": 0.14,
+        "mp_win_penalty": 0.500,
         "mp_kill_penalty": 0.06,
         "mp_pressure_lost_kill_multiplier": 1.30,
     },
@@ -275,17 +285,40 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # Cross-regional Global Finals lobbies (Y4 Split 1/Split 2 Playoffs
         # Finals, 2025 Championship, 2025 Midseason Playoffs Finals — 4
         # events, 36 matches total). Strength variance reflects worldwide
-        # team distribution, not within-region parity: observed p20 = 0.08
-        # kills/match (vs 0.56-1.60 for regional finals) signals that the
-        # bottom of a cross-regional lobby is wiped quickly, which requires
-        # a larger strength_sigma than any regional preset.
-        # Cycle 13 (2026-05): SEED values only. Mid-range across the four
-        # regional cycle-9 presets, with strength_sigma bumped to 0.45 to
-        # reflect cross-regional variance. To be replaced by Bayesian fit
-        # output from tools/fit_region_presets.py --region global.
-        # Observed targets: mean_end ≈ 9.0 (rough), p1 9.47, p20 0.08,
-        # kills/match 57.47.
-        "strength_sigma": 0.45,
+        # invitation-only team distribution, not within-region parity:
+        # observed p20 = 0.08 kills/match (vs 0.56-1.60 for regional
+        # finals) signals that the bottom of a cross-regional lobby is
+        # wiped quickly, which requires a larger strength_sigma than any
+        # regional preset.
+        # Cycle 13 (2026-05): 5-component bayesian fit. Best:
+        #   sigma=0.700, lost_kill=0.165, PKF=1.44, respawn=2.7,
+        #   mp_win=0.500.
+        # sim mean_end=7.30 vs obs 9.00, p1=10.52 vs 9.47, p10=1.32 vs
+        # 2.53, p20=0.27 vs 0.08, total=47.37 vs 57.47. err=0.4419 —
+        # ~10x the regional range (0.05-0.13).
+        #
+        # IMPORTANT INTERPRETATION NOTE:
+        # The sigma=0.700 upper-bound pin is NOT evidence that "global
+        # team variance is unusually wide". It is evidence that the
+        # current normal-distribution team-strength model cannot
+        # represent the actual global lobby distribution.
+        #
+        # Global Finals are invitation-only (region top ~3 each), so
+        # the underlying strength distribution is a top-cluster (~all
+        # elites, narrow with a thin tail) rather than a wide normal.
+        # bayesian gp_minimize pushed sigma to the upper bound trying
+        # to reproduce p20=0.08 (bottom-zero) within the normal-
+        # distribution shape — but a wide normal also empties the
+        # middle (sim p10=1.32 vs obs 2.53). The residual err is
+        # dominated by p10 (52%) and p20 (33%), and these two can
+        # not be jointly satisfied by tuning normal-distribution sigma.
+        #
+        # Treat this row as the best in-model approximation, NOT as a
+        # physical claim that global teams differ more in strength.
+        # A future cycle should introduce a non-normal team-strength
+        # distribution (mixture / clipped / cluster model) for global
+        # before drawing inference from this preset.
+        "strength_sigma": 0.700,
         "rank_beta": 0.95,
         "kill_beta": 0.80,
         "win_beta": 0.80,
@@ -296,15 +329,15 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 1.00,
         "volatility_sigma": 0.25,
         "respawn_model": "negbin",
-        "respawn_mean": 7.5,
+        "respawn_mean": 2.7,
         "respawn_dispersion": 3.5,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.07,
+        "lost_kill_rate": 0.165,
         "transfer_kill_rate": 0.05,
         "revive_knock_mean": 9.0,
-        "placement_kill_sharpness": 0.90,
+        "placement_kill_sharpness": 1.44,
         "mp_pressure_enabled": True,
-        "mp_win_penalty": 0.14,
+        "mp_win_penalty": 0.500,
         "mp_kill_penalty": 0.05,
         "mp_pressure_lost_kill_multiplier": 1.25,
     },
