@@ -26,6 +26,11 @@ env/
 .DS_Store
 Thumbs.db
 
+# Local archive of cycle 9-13 era artifacts (data fetches, exploratory
+# fits, sweep CSV/JSON, smoke runs). Moved here in cycle 14 cleanup so
+# they no longer clutter the working tree. Not committed.
+_archive/
+
 # Liquipedia / external HTML fetches (transient data-checking artifacts)
 algs_*.html
 _ssg_*.html
