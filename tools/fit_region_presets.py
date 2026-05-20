@@ -165,6 +165,10 @@ SEARCH_SPACE_BAYES: dict[str, tuple[float, float]] = {
     "placement_kill_sharpness": (0.4, 2.0),
     "respawn_mean": (1.0, 12.0),
     "mp_win_penalty": (0.0, 0.50),
+    # cycle 19: mid-tier (10th place) kill bump. 0.0 = no bump (identity).
+    # sharpness can't lift the mid-tier selectively; this orthogonal
+    # log-space Gaussian offset attacks the apac_n p10 deficit directly.
+    "placement_kill_mid_boost": (0.0, 1.5),
 }
 
 
@@ -537,6 +541,7 @@ _PARAM_FORMAT: dict[str, str] = {
     "placement_kill_sharpness": "{:.2f}",
     "respawn_mean": "{:.1f}",
     "mp_win_penalty": "{:.3f}",
+    "placement_kill_mid_boost": "{:.3f}",  # cycle 19
     # legacy keys, kept so we can still render older proposals if needed
     "revive_knock_mean": "{:.1f}",
 }

@@ -8,7 +8,11 @@ import numpy as np
 import pytest
 
 from config import PLACEMENT_KILL_FACTOR, PLACEMENT_POINTS, SimulationConfig
-from match_sim import _apply_placement_kill_sharpness, simulate_match
+from match_sim import (
+    _apply_mid_placement_boost,
+    _apply_placement_kill_sharpness,
+    simulate_match,
+)
 from teams import generate_teams, teams_to_arrays
 from tournament_sim import simulate_tournament
 
@@ -235,3 +239,30 @@ def test_11_placement_sharpness_monotone_1st_to_20th():
     assert ratios[0] < 12.0
     # sharpness=2.0 gives a much larger ratio
     assert ratios[-1] > 100.0
+
+
+def test_12_mid_placement_boost_identity_at_zero():
+    """boost=0.0 must return the input factor verbatim (backward compat)."""
+    base = _apply_placement_kill_sharpness(PLACEMENT_KILL_FACTOR, 1.0)
+    out = _apply_mid_placement_boost(base, 0.0, 9.0, 2.5)
+    assert np.allclose(out, base)
+
+
+def test_13_mid_placement_boost_lifts_center():
+    """boost>0 raises the factor at the bump center (10th place, rank 9)."""
+    base = _apply_placement_kill_sharpness(PLACEMENT_KILL_FACTOR, 1.0)
+    out = _apply_mid_placement_boost(base, 0.5, 9.0, 2.5)
+    # 10th place (rank index 9) must increase
+    assert out[9] > base[9]
+    # the bump must actually peak at the center, not elsewhere mid-table
+    gain = out / base
+    assert gain.argmax() == 9, f"bump peak at rank {gain.argmax()}, expected 9"
+
+
+def test_14_mid_placement_boost_leaves_edges_untouched():
+    """A center=9 / width=2.5 bump barely moves the 1st and 20th factors."""
+    base = _apply_placement_kill_sharpness(PLACEMENT_KILL_FACTOR, 1.0)
+    out = _apply_mid_placement_boost(base, 0.5, 9.0, 2.5)
+    # rank 0 (1st) and rank 19 (20th) are >3.5 sigma from center -> ~unchanged
+    assert abs(out[0] / base[0] - 1.0) < 0.01
+    assert abs(out[-1] / base[-1] - 1.0) < 0.01

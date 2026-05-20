@@ -126,6 +126,15 @@ class SimulationConfig:
     # scaling around the geometric mean of the base tuple.
     placement_kill_sharpness: float = 1.0
 
+    # Mid-tier kill bump (cycle 19): adds a Gaussian bump in log-space to the
+    # post-sharpness factor table, centered on a rank index. sharpness only
+    # rescales the monotone gradient around its mean, so it cannot lift the
+    # mid-tier (7-12th) selectively; this orthogonal additive offset can.
+    # boost=0.0 disables the bump (identity, backward compatible).
+    placement_kill_mid_boost: float = 0.0     # 0.0 = no bump
+    placement_kill_mid_center: float = 9.0    # rank index, 9 = 10th place
+    placement_kill_mid_width: float = 2.5     # Gaussian sigma in rank units
+
     # Match Point pressure
     mp_pressure_enabled: bool = True
     mp_win_penalty: float = 0.10
@@ -170,7 +179,19 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # near but no longer at the upper edge. Americas remains the
         # highest-total-kill region (obs 61.90), so respawn supply
         # naturally sits near the upper end of the search space.
-        "strength_sigma": 0.307,
+        #
+        # Cycle 19 (2026-05): re-fit with the new mid-tier kill bump
+        # (placement_kill_mid_boost; a log-space Gaussian peaked at 10th
+        # place, width 2.5, added on top of placement_kill_sharpness).
+        # All six fit params re-optimized. Best:
+        #   sigma=0.285, lost_kill=0.020, PKF=0.86, respawn=11.4,
+        #   mp_win=0.006, mid_boost=0.000.
+        # sim mean_end=7.85 (obs 7.50), p1=9.07/p10=2.65/p20=1.06/
+        # total=65.21, err=0.0445. Americas converged to mid_boost=0.0
+        # (bump switched off): it has no mid-tier kill deficit, so the
+        # new DOF is correctly inert here, leaving Americas ~level with
+        # cycle 14 (0.0429).
+        "strength_sigma": 0.285,
         "rank_beta": 1.00,
         "kill_beta": 0.85,
         "win_beta": 0.85,
@@ -181,15 +202,16 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 0.95,
         "volatility_sigma": 0.20,
         "respawn_model": "negbin",
-        "respawn_mean": 11.6,
+        "respawn_mean": 11.4,
         "respawn_dispersion": 4.0,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.031,
+        "lost_kill_rate": 0.020,
         "transfer_kill_rate": 0.05,
         "revive_knock_mean": 13.0,
-        "placement_kill_sharpness": 0.85,
+        "placement_kill_sharpness": 0.86,
+        "placement_kill_mid_boost": 0.000,
         "mp_pressure_enabled": True,
-        "mp_win_penalty": 0.000,
+        "mp_win_penalty": 0.006,
         "mp_kill_penalty": 0.04,
         "mp_pressure_lost_kill_multiplier": 1.15,
     },
@@ -207,7 +229,14 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # the best fit across all five regions in this cycle.
         # All five params now interior; cycle-13's mp_win=0.500 upper
         # edge resolved (now 0.468).
-        "strength_sigma": 0.349,
+        #
+        # Cycle 19 (2026-05): re-fit with the mid-tier kill bump. Best:
+        #   sigma=0.351, lost_kill=0.068, PKF=1.19, respawn=6.2,
+        #   mp_win=0.390, mid_boost=0.372.
+        # sim mean_end=8.50 (obs 8.50), p1=9.41/p10=2.52/p20=0.55/
+        # total=56.86, err=0.0002 — a near-perfect fit. A modest bump
+        # (0.372) sharpens the mid-tier match versus cycle 14 (0.0181).
+        "strength_sigma": 0.351,
         "rank_beta": 0.95,
         "kill_beta": 0.80,
         "win_beta": 0.75,
@@ -218,15 +247,16 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 1.05,
         "volatility_sigma": 0.28,
         "respawn_model": "negbin",
-        "respawn_mean": 7.2,
+        "respawn_mean": 6.2,
         "respawn_dispersion": 3.5,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.035,
+        "lost_kill_rate": 0.068,
         "transfer_kill_rate": 0.05,
         "revive_knock_mean": 7.0,
-        "placement_kill_sharpness": 1.02,
+        "placement_kill_sharpness": 1.19,
+        "placement_kill_mid_boost": 0.372,
         "mp_pressure_enabled": True,
-        "mp_win_penalty": 0.468,
+        "mp_win_penalty": 0.390,
         "mp_kill_penalty": 0.05,
         "mp_pressure_lost_kill_multiplier": 1.25,
     },
@@ -249,7 +279,23 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # The p10 vs total tension here likely needs a non-normal team
         # distribution (top-cluster) to resolve cleanly; see the global
         # preset note below.
-        "strength_sigma": 0.268,
+        #
+        # Cycle 19 (2026-05): the p10 deficit is FINALLY resolved by the
+        # mid-tier kill bump. Cycles 15-18 (team-strength offset,
+        # correlations, betas, transfer_kill_rate) all left p10 stuck at
+        # ~2.56 because they can't break the monotone placement gradient;
+        # placement_kill_sharpness only rescales it. The new log-space
+        # Gaussian bump (mid_boost) lifts the 10th-place factor directly.
+        # Best: sigma=0.123, lost_kill=0.050, PKF=1.41, respawn=9.2,
+        #   mp_win=0.102, mid_boost=0.916 (the largest bump of all five
+        #   regions — APAC-N is the most mid-tier-active region).
+        # sim mean_end=8.74 (obs 8.75), p1=9.93 (obs 9.97),
+        #   p10=3.44 (obs 3.51 — was 2.56!), p20=0.46, total=60.65.
+        # err=0.0251, down from cycle 14's 0.1615 (a 6.4x improvement).
+        # The over-supplied total kills (cycle 14: 65.47) also fell to
+        # 60.65 as the bump re-routed kills into the mid-tier instead of
+        # the bottom via the respawn upper-edge.
+        "strength_sigma": 0.123,
         "rank_beta": 0.85,
         "kill_beta": 0.75,
         "win_beta": 0.55,
@@ -260,15 +306,16 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 1.10,
         "volatility_sigma": 0.30,
         "respawn_model": "negbin",
-        "respawn_mean": 12.0,
+        "respawn_mean": 9.2,
         "respawn_dispersion": 3.0,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.020,
+        "lost_kill_rate": 0.050,
         "transfer_kill_rate": 0.06,
         "revive_knock_mean": 9.0,
-        "placement_kill_sharpness": 0.98,
+        "placement_kill_sharpness": 1.41,
+        "placement_kill_mid_boost": 0.916,
         "mp_pressure_enabled": True,
-        "mp_win_penalty": 0.277,
+        "mp_win_penalty": 0.102,
         "mp_kill_penalty": 0.05,
         "mp_pressure_lost_kill_multiplier": 1.35,
     },
@@ -287,7 +334,14 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # All five params interior; cycle-13's mp_win=0.500 edge fully
         # resolved (now 0.359), and lost_kill dropped from 0.091 to
         # 0.054 under the rebalanced err.
-        "strength_sigma": 0.402,
+        #
+        # Cycle 19 (2026-05): re-fit with the mid-tier kill bump. Best:
+        #   sigma=0.403, lost_kill=0.045, PKF=1.14, respawn=6.3,
+        #   mp_win=0.271, mid_boost=0.415.
+        # sim mean_end=8.00 (obs 8.00), p1=9.20/p10=2.72/p20=0.60/
+        # total=58.46, err=0.0003 — a near-perfect fit. A moderate bump
+        # (0.415) tightens p10 versus cycle 14 (0.0225).
+        "strength_sigma": 0.403,
         "rank_beta": 0.95,
         "kill_beta": 0.72,
         "win_beta": 0.85,
@@ -298,15 +352,16 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 0.98,
         "volatility_sigma": 0.25,
         "respawn_model": "negbin",
-        "respawn_mean": 9.8,
+        "respawn_mean": 6.3,
         "respawn_dispersion": 3.5,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.054,
+        "lost_kill_rate": 0.045,
         "transfer_kill_rate": 0.06,
         "revive_knock_mean": 7.0,
-        "placement_kill_sharpness": 0.95,
+        "placement_kill_sharpness": 1.14,
+        "placement_kill_mid_boost": 0.415,
         "mp_pressure_enabled": True,
-        "mp_win_penalty": 0.359,
+        "mp_win_penalty": 0.271,
         "mp_kill_penalty": 0.06,
         "mp_pressure_lost_kill_multiplier": 1.30,
     },
@@ -342,11 +397,22 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         # to be exactly fit by a smooth strength/PKF model; the new
         # err weights it on the common scale so its residual no longer
         # distorts the rest of the fit.
+        #
+        # Cycle 19 (2026-05): re-fit with the mid-tier kill bump. Best:
+        #   sigma=0.319, lost_kill=0.054, PKF=1.39, respawn=1.5,
+        #   mp_win=0.268, mid_boost=0.644.
+        # sim mean_end=8.98 (obs 9.00), p1=9.44/p10=2.53/p20=0.40/
+        # total=53.55, err=0.0168, down from cycle 14's 0.0681. The
+        # bump (0.644) re-routes kills into the mid-tier, which as a
+        # side effect halves the bottom-zero residual: p20 fell 0.73 ->
+        # 0.40 (obs 0.08). respawn_mean dropped to the lower end (1.5)
+        # since the bump now supplies mid-tier kills that previously
+        # leaned on respawn over-supply.
         "lobby_composition": "wb_eb",
         "pool_size": 40,
         "wb_top_n": 10,
         "eb_top_n": 10,
-        "strength_sigma": 0.265,
+        "strength_sigma": 0.319,
         "rank_beta": 0.95,
         "kill_beta": 0.80,
         "win_beta": 0.80,
@@ -357,15 +423,16 @@ REGION_PROFILES: dict[str, dict[str, float | int | bool | str]] = {
         "volatility_mean": 1.00,
         "volatility_sigma": 0.25,
         "respawn_model": "negbin",
-        "respawn_mean": 6.8,
+        "respawn_mean": 1.5,
         "respawn_dispersion": 3.5,
         "neutral_death_rate": 0.03,
-        "lost_kill_rate": 0.052,
+        "lost_kill_rate": 0.054,
         "transfer_kill_rate": 0.05,
         "revive_knock_mean": 9.0,
-        "placement_kill_sharpness": 1.08,
+        "placement_kill_sharpness": 1.39,
+        "placement_kill_mid_boost": 0.644,
         "mp_pressure_enabled": True,
-        "mp_win_penalty": 0.442,
+        "mp_win_penalty": 0.268,
         "mp_kill_penalty": 0.05,
         "mp_pressure_lost_kill_multiplier": 1.25,
     },

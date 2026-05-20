@@ -54,6 +54,24 @@ def _apply_placement_kill_sharpness(
     return np.exp(mean_log + sharpness * (log_arr - mean_log))
 
 
+def _apply_mid_placement_boost(
+    factor: np.ndarray, boost: float, center: float, width: float
+) -> np.ndarray:
+    """Add a log-space Gaussian bump to the post-sharpness factor table.
+
+    Unlike sharpness (an affine rescale of log-deviations that preserves the
+    monotone gradient), this is an additive offset peaked at `center`, so it
+    can lift the mid-tier (e.g. 10th place) selectively. The two are
+    mathematically orthogonal. boost=0.0 returns the input unchanged so the
+    default config reproduces the pre-cycle-19 behavior exactly.
+    """
+    if boost == 0.0:
+        return factor
+    ranks = np.arange(len(factor), dtype=np.float64)
+    bump = boost * np.exp(-((ranks - center) ** 2) / (2.0 * width ** 2))
+    return np.exp(np.log(factor) + bump)  # = factor * exp(bump)
+
+
 def _sample_negbin_mean_dispersion(
     mean: float, dispersion: float, rng: np.random.Generator
 ) -> int:
@@ -240,6 +258,12 @@ def allocate_kills(
 
     factor_table = _apply_placement_kill_sharpness(
         PLACEMENT_KILL_FACTOR, cfg.placement_kill_sharpness
+    )
+    factor_table = _apply_mid_placement_boost(
+        factor_table,
+        cfg.placement_kill_mid_boost,
+        cfg.placement_kill_mid_center,
+        cfg.placement_kill_mid_width,
     )
     placement_factor = np.array(
         [factor_table[placement_position[tid]] for tid in team_ids]
